@@ -1,0 +1,530 @@
+* {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #f0f0f0;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+            border: 8px solid #4a9fd8;
+        }
+
+        .main-content {
+            flex: 1;
+            background: #7D1C19;
+            padding: 25px;
+        }
+
+        .header {
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 12px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stat-icon {
+            font-size: 32px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #ddd;
+            border-top-color: #333;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 15px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 4px;
+        }
+
+        .card-title {
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+        }
+
+        .service-item {
+            margin-bottom: 25px;
+        }
+
+        .service-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .service-dates {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 3px;
+        }
+
+        .service-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .status-progress {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .status-completed {
+            color: #2e7d32;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .next-step {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .divider {
+            border-top: 1px dashed #ccc;
+            margin: 15px 0;
+        }
+
+        .appointment {
+            background: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .appointment-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .appointment-date {
+            font-size: 12px;
+            margin-bottom: 3px;
+        }
+
+        .appointment-time {
+            font-size: 12px;
+            margin-bottom: 3px;
+        }
+
+        .appointment-type {
+            font-size: 12px;
+        }
+
+/* THIS IS THE EXTENTION CSS FOR THE PROGRESS PAGE FOR CLIENT*/
+
+ .progress-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .service-card {
+            background: white;
+            padding: 25px;
+            border-radius: 4px;
+        }
+
+        .service-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .service-step {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .timeline-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .timeline-dot {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .dot-completed {
+            background: #7D1C19;
+        }
+
+        .dot-inactive {
+            background: #d4d4d4;
+        }
+
+        .timeline-content {
+            flex: 1;
+        }
+
+        .timeline-title {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .timeline-description {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .timeline-date {
+            font-size: 11px;
+            color: #666;
+            margin-top: 3px;
+        }
+
+/*THIS IS THE EXTENSION CSS FOR THE CLIENT SERVICES LIKE MODALS ETC.*/
+
+ .filter-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: white;
+            color: #333;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .filter-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .filter-btn.active {
+            background: #333;
+            color: white;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .service-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .service-icon {
+            font-size: 36px;
+        }
+
+        .service-card-title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        .service-description {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.5;
+            flex: 1;
+        }
+
+        .service-price-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .service-price {
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        .select-service-btn {
+            background: #7D1C19;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .select-service-btn:hover {
+            background: #5a1412;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+
+        .modal.active {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            border-left: 4px solid #4a9fd8;
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .modal-category {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .modal-description {
+            font-size: 13px;
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        .modal-price {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+            margin-top: 20px;
+        }
+
+        .section-subtitle {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .delivery-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .delivery-option {
+            padding: 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            background: #f0f0f0;
+            transition: all 0.3s;
+        }
+
+        .delivery-option:hover {
+            background: #e0e0e0;
+        }
+
+        .delivery-option.selected {
+            background: #c4a5a5;
+            color: white;
+        }
+
+        .delivery-option-title {
+            font-weight: bold;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .delivery-option-desc {
+            font-size: 10px;
+            margin-top: 5px;
+        }
+
+        .delivery-option.selected .delivery-option-desc {
+            color: white;
+        }
+
+        .delivery-instructions {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .delivery-instructions.active {
+            display: block;
+        }
+
+        .delivery-instructions-title {
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
+        .delivery-instructions ul {
+            margin-left: 20px;
+            font-size: 11px;
+            line-height: 1.8;
+        }
+
+        .required-docs-section {
+            margin-top: 20px;
+        }
+
+        .document-item {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .document-name {
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .upload-btn {
+            background: #7D1C19;
+            color: white;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .cancel-btn, .submit-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .cancel-btn {
+            background: #d4d4d4;
+            color: #333;
+        }
+
+        .submit-btn {
+            background: #7D1C19;
+            color: white;
+        }
+
+        .cancel-btn:hover {
+            background: #c0c0c0;
+        }
+
+        .submit-btn:hover {
+            background: #5a1412;
+        }

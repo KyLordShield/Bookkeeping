@@ -1,0 +1,57 @@
+/* assets/css/navigation_bar.css */
+
+.sidebar {
+    width: 160px;
+    background: #e8e8e8;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.logo {
+    width: 40px;
+    height: 40px;
+    background: white;
+    border: 2px solid #4a9fd8;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #4a9fd8;
+    margin-bottom: 10px;
+}
+
+/* Default state: White background, dark text */
+.sidebar a {
+    display: block;
+    background: white;
+    color: #333;
+    text-decoration: none;
+    padding: 12px;
+    text-align: center;
+    font-weight: bold;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+/* Hover on non-active items */
+.sidebar a:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+/* Active page: Red background, white text */
+.sidebar a.active {
+    background: #7D1C19 !important;     /* Main red */
+    color: white !important;
+    border-left: 6px solid #4a9fd8 !important;
+    font-weight: bolder;
+    padding-left: 18px;                 /* Adjust for blue border */
+}
+
+/* Optional: Darker red on hover when active */
+.sidebar a.active:hover {
+    background: #631715 !important;
+}
