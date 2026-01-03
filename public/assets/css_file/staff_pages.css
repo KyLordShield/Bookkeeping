@@ -1,0 +1,285 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0f0f0; /* Light background outside the main area */
+    min-height: 100vh;
+}
+
+/* ===== SIDEBAR LAYOUT - THIS IS THE KEY FIX ===== */
+.container {
+    display: flex;
+    min-height: 100vh;
+    border: 8px solid #4a9fd8; /* Optional: keep your signature blue border */
+}
+
+.main-content {
+    flex: 1;                          /* Takes all remaining space after sidebar */
+    background-color: #7D1C19;        /* Maroon background for the main area */
+    padding: 40px;                    /* Spacious padding */
+    color: white;
+}
+
+/* ===== PAGE CONTENT STYLES (unchanged, just moved under .main-content context) ===== */
+h1 {
+    color: white;
+    font-size: 32px;
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    color: white;
+    font-size: 14px;
+    margin-bottom: 30px;
+    opacity: 0.9;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: white;
+    color: #333;
+    padding: 30px 20px;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.filter-section {
+    background: white;
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-label {
+    font-weight: bold;
+    color: #333;
+}
+
+.filter-btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.filter-btn.active {
+    background: #333;
+    color: white;
+}
+
+.filter-btn:not(.active) {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.tasks-table {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    padding: 15px 10px;
+    border-bottom: 2px solid #eee;
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #666;
+}
+
+td {
+    padding: 20px 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+    color: #333;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 15px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.status-progress {
+    background: #4ade80;
+    color: white;
+}
+
+.status-pending {
+    background: #ef4444;
+    color: white;
+}
+
+.action-btn {
+    background: #4ade80;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.action-btn:hover {
+    background: #22c55e;
+}
+
+/* ===== MODAL STYLES (unchanged) ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 40px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 800px;
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #666;
+}
+
+.close-btn:hover {
+    color: #000;
+}
+
+.back-link {
+    color: #5b9cf5;
+    text-decoration: none;
+    font-size: 14px;
+    margin-bottom: 20px;
+    display: inline-block;
+}
+
+.modal-title {
+    font-size: 24px;
+    margin-bottom: 20px;
+    font-weight: bold;
+    color: #333;
+}
+
+.client-info {
+    display: flex;
+    gap: 30px;
+    font-size: 14px;
+    margin-bottom: 30px;
+    color: #333;
+}
+
+.modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.timeline-section {
+    background: #f5f5f5;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.timeline-title {
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.actions-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.modal-action-btn {
+    padding: 15px;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    font-size: 14px;
+}
+
+.btn-update {
+    background: #5b9cf5;
+    color: white;
+}
+
+.btn-submit {
+    background: #4ade80;
+    color: white;
+}
+
+.btn-admin {
+    background: #ef4444;
+    color: white;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .modal-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .container {
+        flex-direction: column; /* Stack sidebar on top on mobile */
+    }
+
+    .main-content {
+        padding: 20px;
+    }
+}

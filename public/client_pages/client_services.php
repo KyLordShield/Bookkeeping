@@ -7,13 +7,13 @@
     <link rel="stylesheet" href="../assets/css_file/client_pages.css">
     <link rel="stylesheet" href="../assets/css_file/navigation_bar.css">
     <style>
-       
+        /* Optional: Add any page-specific overrides here if needed */
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Sidebar will be inserted here via PHP -->
-         <?php include '../partials/navigation_bar.php'; ?>
+        <!-- Sidebar Navigation -->
+        <?php include '../partials/navigation_bar.php'; ?>
         
         <div class="main-content">
             <div class="header">
@@ -21,164 +21,94 @@
                 <p>Browse and select the services you need for your business</p>
             </div>
 
-            <div class="filter-buttons">
-                <button class="filter-btn active" onclick="filterServices('all')">All</button>
-                <button class="filter-btn" onclick="filterServices('legal')">Legal</button>
-                <button class="filter-btn" onclick="filterServices('finance')">Finance</button>
-                <button class="filter-btn" onclick="filterServices('consulting')">Consulting</button>
-            </div>
+           
 
             <div class="services-grid">
-                <!-- Service Card 1 -->
-                <div class="service-card" data-category="legal">
-                    <div class="service-icon">⚖️</div>
-                    <div class="service-card-title">Business Registration</div>
-                    <div class="service-description">Complete business registration and incorporation services with legal compliance</div>
-                    <div class="service-price-section">
-                        <div class="service-price">PRICE HERE</div>
-                        <button class="select-service-btn" onclick="openModal('Business Registration', 'Legal', '$???')">Select Service</button>
-                    </div>
-                </div>
-
-                <!-- Service Card 2 -->
-                <div class="service-card" data-category="legal">
-                    <div class="service-icon">⚖️</div>
-                    <div class="service-card-title">Permit & Licensing</div>
-                    <div class="service-description">Assistance with obtaining necessary business permits and licenses</div>
-                    <div class="service-price-section">
-                        <div class="service-price">PRICE HERE</div>
-                        <button class="select-service-btn" onclick="openModal('Permit & Licensing', 'Legal', '$???')">Select Service</button>
-                    </div>
-                </div>
-
-                <!-- Service Card 3 -->
+                <!-- Example Service Cards -->
                 <div class="service-card" data-category="finance">
                     <div class="service-icon">📊</div>
-                    <div class="service-card-title">Business Registration</div>
-                    <div class="service-description">Complete business registration and incorporation services with legal compliance</div>
+                    <div class="service-card-title">Bookkeeping – Single Proprietor</div>
+                    <div class="service-description">Comprehensive bookkeeping services tailored for sole proprietors</div>
                     <div class="service-price-section">
-                        <div class="service-price">PRICE HERE</div>
-                        <button class="select-service-btn" onclick="openModal('Business Registration', 'Finance', '$???')">Select Service</button>
+                        
+                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping – Corporation')">Request Meeting</button>
                     </div>
                 </div>
 
-                <!-- Service Card 4 -->
-                <div class="service-card" data-category="consulting">
-                    <div class="service-icon">📋</div>
-                    <div class="service-card-title">Business Registration</div>
-                    <div class="service-description">Complete business registration and incorporation services with legal compliance</div>
+
+                <div class="service-card" data-category="finance">
+                    <div class="service-icon">📊</div>
+                    <div class="service-card-title">Bookkeeping – Corporation</div>
+                    <div class="service-description">Full-scale corporate bookkeeping and financial management</div>
                     <div class="service-price-section">
-                        <div class="service-price">PRICE HERE</div>
-                        <button class="select-service-btn" onclick="openModal('Business Registration', 'Consulting', '$???')">Select Service</button>
+                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping – Corporation')">Request Meeting</button>
                     </div>
                 </div>
 
-                <!-- Service Card 5 -->
-                <div class="service-card" data-category="consulting">
-                    <div class="service-icon">👥</div>
-                    <div class="service-card-title">Business Registration</div>
-                    <div class="service-description">Complete business registration and incorporation services with legal compliance</div>
+                <div class="service-card" data-category="finance">
+                    <div class="service-icon">📊</div>
+                    <div class="service-card-title">Human Resources (HR) Services</div>
+                    <div class="service-description">Complete HR solutions for your business needs</div>
                     <div class="service-price-section">
-                        <div class="service-price">PRICE HERE</div>
-                        <button class="select-service-btn" onclick="openModal('Business Registration', 'Consulting', '$???')">Select Service</button>
+                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping – Corporation')">Request Meeting</button>
                     </div>
                 </div>
+
+                <div class="service-card" data-category="finance">
+                    <div class="service-icon">📊</div>
+                    <div class="service-card-title">Business Registration (One-Time)</div>
+                    <div class="service-description">Hassle-free business registration and setup services</div>
+                    <div class="service-price-section">
+                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping – Corporation')">Request Meeting</button>
+                    </div>
+                </div>
+
+                <div class="service-card" data-category="finance">
+                    <div class="service-icon">📊</div>
+                    <div class="service-card-title">Renewals & Compliance</div>
+                    <div class="service-description">Stay compliant with timely renewals and regulatory updates</div>
+                    <div class="service-price-section">
+                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping – Corporation')">Request Meeting</button>
+                    </div>
+                </div>
+
+                <!-- Add more service cards as needed -->
             </div>
         </div>
     </div>
 
-    <!-- Modal -->
-    <div id="serviceModal" class="modal">
-        <div class="modal-content">
+    <!-- NEW MODAL: Request Meeting (Matches your screenshot exactly) -->
+    <div id="meetingModal" class="modal-overlay">
+        <div class="modal-window">
             <div class="modal-header">
-                <div class="modal-title" id="modalTitle">Business Registration</div>
-                <div class="modal-category" id="modalCategory">Legal</div>
+                <h2>Request Meeting</h2>
+                <span class="close-btn" onclick="closeMeetingModal()">&times;</span>
             </div>
 
-            <div class="modal-description">
-                Complete business registration and incorporation services with legal compliance
-            </div>
-
-            <div class="modal-price" id="modalPrice">$???</div>
-
-            <div class="section-title">Document Submission Method</div>
-            <div class="section-subtitle">Choose how you'd like to submit your documents</div>
-
-            <div class="delivery-options">
-                <div class="delivery-option" onclick="selectDelivery('online')">
-                    <div style="font-size: 24px;">💻</div>
-                    <div class="delivery-option-title">Online Upload</div>
-                    <div class="delivery-option-desc">Upload documents digitally</div>
+            <div class="modal-body">
+                <div class="service-name">
+                    Service: <strong id="modalServiceName">Bookkeeping – Corporation</strong>
                 </div>
-                <div class="delivery-option" onclick="selectDelivery('onsite')">
-                    <div style="font-size: 24px;">🏢</div>
-                    <div class="delivery-option-title">On-Site Delivery</div>
-                    <div class="delivery-option-desc">Bring documents to office</div>
-                </div>
-                <div class="delivery-option" onclick="selectDelivery('pickup')">
-                    <div style="font-size: 24px;">🚗</div>
-                    <div class="delivery-option-title">Staff Pick up</div>
-                    <div class="delivery-option-desc">We'll collect from you</div>
-                </div>
+
+                <label for="preferredDate">Preferred Date</label>
+                <input type="date" id="preferredDate" name="preferredDate" placeholder="dd -- yyyy" required>
+
+                <label for="preferredTime">Preferred Time</label>
+                <input type="time" id="preferredTime" name="preferredTime" required>
+                <p class="business-hours">Business hours: 9:00 AM - 6:00 PM</p>
+
+                <label for="additionalNotes">Additional Notes?</label>
+                <textarea id="additionalNotes" placeholder="Any specific requirements or questions..." rows="4"></textarea>
             </div>
 
-            <!-- On-Site Delivery Instructions -->
-            <div id="onsiteInstructions" class="delivery-instructions">
-                <div class="delivery-instructions-title">On-Site Delivery Instructions</div>
-                <ul>
-                    <li>Bring all required documents listed below</li>
-                    <li>Office Hours: Monday - Friday, 9:00 AM - 5:00 PM</li>
-                    <li>Address will be sent to your email after submission</li>
-                    <li>Please bring valid ID for verification</li>
-                </ul>
-                <div style="margin-top: 15px; font-weight: bold; font-size: 12px;">Required Documents:</div>
-                <ul>
-                    <li>Bank Statements</li>
-                    <li>Receipts and Invoices</li>
-                    <li>Payroll Information</li>
-                    <li>Previous Financial Records</li>
-                </ul>
-            </div>
-
-            <!-- Staff Pickup Instructions -->
-            <div id="pickupInstructions" class="delivery-instructions">
-                <div class="delivery-instructions-title">Staff Pickup Service</div>
-                <ul>
-                    <li>Our staff will contact you within 24 hours</li>
-                    <li>Schedule a convenient pickup time within 1 week</li>
-                    <li>Prepare all documents in a sealed envelope</li>
-                    <li>Free pickup service within city limits</li>
-                </ul>
-                <div style="margin-top: 15px; font-weight: bold; font-size: 12px;">Documents to Prepare:</div>
-                <ul>
-                    <li>Bank Statements</li>
-                    <li>Receipts and Invoices</li>
-                    <li>Payroll Information</li>
-                    <li>Previous Financial Records</li>
-                </ul>
-            </div>
-
-            <!-- Online Upload Section -->
-            <div id="onlineUploadSection" class="required-docs-section" style="display: none;">
-                <div class="section-title">Required Documents</div>
-                <div class="section-subtitle">Please upload all required documents to proceed with your application</div>
-
-                <div class="document-item">
-                    <div class="document-name">Business plan Document</div>
-                    <button class="upload-btn">Upload</button>
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="cancel-btn" onclick="closeModal()">Cancel</button>
-                <button class="submit-btn">Submit Application</button>
+            <div class="modal-footer">
+                <button class="submit-request-btn" onclick="submitMeetingRequest()">Submit Request</button>
             </div>
         </div>
     </div>
 
     <script>
-        let currentDeliveryMethod = '';
-
+        // Filter services (unchanged)
         function filterServices(category) {
             const cards = document.querySelectorAll('.service-card');
             const buttons = document.querySelectorAll('.filter-btn');
@@ -195,60 +125,51 @@
             });
         }
 
-        function openModal(title, category, price) {
-            document.getElementById('modalTitle').textContent = title;
-            document.getElementById('modalCategory').textContent = category;
-            document.getElementById('modalPrice').textContent = price;
-            document.getElementById('serviceModal').classList.add('active');
-            currentDeliveryMethod = '';
+        // Open the new Request Meeting modal
+        function openMeetingModal(serviceName) {
+            document.getElementById('modalServiceName').textContent = serviceName;
+            document.getElementById('meetingModal').classList.add('active');
             
-            // Reset all selections
-            document.querySelectorAll('.delivery-option').forEach(opt => {
-                opt.classList.remove('selected');
-            });
-            document.querySelectorAll('.delivery-instructions').forEach(inst => {
-                inst.classList.remove('active');
-            });
-            document.getElementById('onlineUploadSection').style.display = 'none';
+            // Optional: reset form
+            document.getElementById('preferredDate').value = '';
+            document.getElementById('preferredTime').value = '';
+            document.getElementById('additionalNotes').value = '';
         }
 
-        function closeModal() {
-            document.getElementById('serviceModal').classList.remove('active');
+        // Close modal
+        function closeMeetingModal() {
+            document.getElementById('meetingModal').classList.remove('active');
         }
 
-        function selectDelivery(method) {
-            currentDeliveryMethod = method;
-            
-            // Remove all selections
-            document.querySelectorAll('.delivery-option').forEach(opt => {
-                opt.classList.remove('selected');
-            });
-            document.querySelectorAll('.delivery-instructions').forEach(inst => {
-                inst.classList.remove('active');
-            });
-            
-            // Add selection to clicked option
-            event.currentTarget.classList.add('selected');
-            
-            // Show appropriate content
-            if (method === 'online') {
-                document.getElementById('onlineUploadSection').style.display = 'block';
-            } else if (method === 'onsite') {
-                document.getElementById('onsiteInstructions').classList.add('active');
-                document.getElementById('onlineUploadSection').style.display = 'none';
-            } else if (method === 'pickup') {
-                document.getElementById('pickupInstructions').classList.add('active');
-                document.getElementById('onlineUploadSection').style.display = 'none';
+        // Submit handler (you can connect this to your backend later)
+        function submitMeetingRequest() {
+            const service = document.getElementById('modalServiceName').textContent;
+            const date = document.getElementById('preferredDate').value;
+            const time = document.getElementById('preferredTime').value;
+            const notes = document.getElementById('additionalNotes').value;
+
+            if (!date || !time) {
+                alert('Please select both date and time.');
+                return;
             }
+
+            alert(`Meeting request submitted!\nService: ${service}\nDate: ${date}\nTime: ${time}\nNotes: ${notes || 'None'}`);
+            closeMeetingModal();
+            // Later: send via AJAX to your PHP backend
         }
 
         // Close modal when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('serviceModal');
+            const modal = document.getElementById('meetingModal');
             if (event.target === modal) {
-                closeModal();
+                closeMeetingModal();
             }
         }
     </script>
+
+    <!-- Inline CSS for the new modal (add this to your client_pages.css later if preferred) -->
+    <style>
+       
+    </style>
 </body>
 </html>

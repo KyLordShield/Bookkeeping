@@ -163,81 +163,112 @@
             font-size: 12px;
         }
 
-/* THIS IS THE EXTENTION CSS FOR THE PROGRESS PAGE FOR CLIENT*/
 
- .progress-container {
-            display: flex;
-            flex-direction: column;
+
+
+
+
+
+/*THIS IS THE CSS PART fOR THE PAGE PROGRESS IN CLEINT PAGE*/
+.progress-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
+            margin-top: 20px;
         }
 
-        .service-card {
+        .progress-card {
             background: white;
             padding: 25px;
             border-radius: 4px;
         }
 
-        .service-title {
-            font-size: 18px;
+        .progress-card-title {
             font-weight: bold;
+            font-size: 14px;
             margin-bottom: 5px;
         }
 
-        .service-step {
+        .progress-card-status {
             font-size: 11px;
             color: #666;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         .timeline {
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 0;
         }
 
         .timeline-item {
             display: flex;
             align-items: flex-start;
             gap: 15px;
+            position: relative;
+            padding-bottom: 30px;
         }
 
-        .timeline-dot {
-            width: 40px;
-            height: 40px;
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+
+        .timeline-item:not(:last-child)::before {
+            content: '';
+            position: absolute;
+            left: 16px;
+            top: 32px;
+            width: 2px;
+            height: calc(100% - 32px);
+            background: #d4d4d4;
+        }
+
+        .timeline-icon {
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             flex-shrink: 0;
-            margin-top: 2px;
+            font-size: 18px;
+            color: white;
+            z-index: 1;
         }
 
-        .dot-completed {
-            background: #7D1C19;
+        .timeline-icon.completed {
+            background: #4caf50;
         }
 
-        .dot-inactive {
+        .timeline-icon.in-progress {
+            background: #ffd700;
+        }
+
+        .timeline-icon.pending {
             background: #d4d4d4;
         }
 
         .timeline-content {
             flex: 1;
+            padding-top: 3px;
         }
 
         .timeline-title {
             font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 5px;
+            font-size: 13px;
+            margin-bottom: 2px;
         }
 
-        .timeline-description {
+        .timeline-subtitle {
             font-size: 11px;
             color: #666;
-            line-height: 1.4;
         }
 
-        .timeline-date {
-            font-size: 11px;
-            color: #666;
-            margin-top: 3px;
-        }
+
+
+
+        
+
 
 /*THIS IS THE EXTENSION CSS FOR THE CLIENT SERVICES LIKE MODALS ETC.*/
 
@@ -527,4 +558,164 @@
 
         .submit-btn:hover {
             background: #5a1412;
+        }
+
+
+
+
+
+
+
+         /* MODAL FOR THE SERVICES CLIENT PAGE CSS */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        /* Modal Window */
+        .modal-window {
+            background: white;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            animation: modalFadeIn 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Header */
+        .modal-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f9f9f9;
+        }
+
+        .modal-header h2 {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+
+        .close-btn {
+            font-size: 32px;
+            font-weight: bold;
+            color: #999;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+            background: #eee;
+            color: #333;
+        }
+
+        /* Body */
+        .modal-body {
+            padding: 30px;
+        }
+
+        .service-name {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 25px;
+        }
+
+        .service-name strong {
+            color: #333;
+        }
+
+        .modal-body label {
+            display: block;
+            margin: 20px 0 8px;
+            font-weight: bold;
+            color: #333;
+            font-size: 15px;
+        }
+
+        .modal-body input[type="date"],
+        .modal-body input[type="time"],
+        .modal-body textarea {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: inherit;
+            background: #f9f9f9;
+        }
+
+        .modal-body input:focus,
+        .modal-body textarea:focus {
+            outline: none;
+            border-color: #7D1C19;
+            background: white;
+        }
+
+        .business-hours {
+            font-size: 13px;
+            color: #888;
+            margin: 8px 0 0 0;
+            font-style: italic;
+        }
+
+        /* Footer */
+        .modal-footer {
+            padding: 20px 30px;
+            background: #f9f9f9;
+            text-align: center;
+        }
+
+        .submit-request-btn {
+            background: #7D1C19;
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 200px;
+            transition: background 0.3s;
+        }
+
+        .submit-request-btn:hover {
+            background: #5D1412;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .modal-window {
+                width: 95%;
+                margin: 20px;
+            }
+            .modal-body {
+                padding: 25px;
+            }
         }
