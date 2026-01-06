@@ -1,3 +1,21 @@
+<?php
+require_once '../../classes/Staff.php';
+
+$staffObj = new Staff();
+$allStaff = $staffObj->getAllStaffWithStats();
+
+
+$modalStaff = null;
+$modalTasks = [];
+
+if (isset($_GET['view_staff'])) {
+    $viewId = (int)$_GET['view_staff'];
+    $modalStaff = $staffObj->getStaffById($viewId);
+    $statusFilter = $_GET['status'] ?? null;
+    $modalTasks = $staffObj->getTasksByStaffId($viewId, $statusFilter);
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,14 +25,20 @@
     <link rel="stylesheet" href="../assets/css_file/admin_pages.css">
     <link rel="stylesheet" href="../assets/css_file/navigation_bar.css">
     <style>
+        .workload-high { color: #e74c3c; font-weight: bold; }
+        .workload-medium { color: #f39c12; font-weight: bold; }
+        .workload-low { color: #27ae60; font-weight: bold; }
+        .workload-none { color: #7f8c8d; }
         
+        .status-pending { background: #f1c40f; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; }
+        .status-in-progress { background: #3498db; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; }
+        .status-completed { background: #27ae60; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- NAV BAR -->
         <?php include '../partials/temporaryNavAdmin.php'; ?>
-    
 
         <div class="main-content">
             <div class="page-header">
@@ -23,252 +47,115 @@
             </div>
 
             <div class="staff-grid">
-                <div class="staff-card">
-                    <div class="staff-header">
-                        <div class="staff-avatar"></div>
-                        <div class="staff-info">
-                            <div class="staff-name">Sarah Johnson</div>
-                            <div class="staff-email">sarah.j@approvative.com</div>
+                <?php if (empty($allStaff)): ?>
+                    <p>No staff members found.</p>
+                <?php else: ?>
+                    <?php foreach ($allStaff as $staff): 
+                        $fullName = $staff['first_name'] . ' ' . $staff['last_name'];
+                        $workload = $staffObj->getWorkloadLevel($staff['active_tasks_count']);
+                        $workloadClass = $staffObj->getWorkloadClass($workload);
+                    ?>
+                        <div class="staff-card">
+                            <div class="staff-header">
+                                <div class="staff-avatar"></div>
+                                <div class="staff-info">
+                                    <div class="staff-name"><?= htmlspecialchars($fullName) ?></div>
+                                    <div class="staff-email"><?= htmlspecialchars($staff['email']) ?></div>
+                                </div>
+                            </div>
+                            <div class="staff-details">
+                                <div class="staff-detail-row">
+                                    <span class="detail-label">Contact:</span>
+                                    <span class="detail-value"><?= htmlspecialchars($staff['phone'] ?? 'N/A') ?></span>
+                                </div>
+                                <div class="staff-detail-row">
+                                    <span class="detail-label">Active Tasks:</span>
+                                    <span class="detail-value"><?= $staff['active_tasks_count'] ?></span>
+                                </div>
+                                <div class="staff-detail-row">
+                                    <span class="detail-label">Completed Tasks:</span>
+                                    <span class="detail-value"><?= $staff['completed_tasks_count'] ?></span>
+                                </div>
+                                <div class="staff-detail-row">
+                                    <span class="detail-label">Workload:</span>
+                                    <span class="detail-value workload-<?= $workloadClass ?>"><?= $workload ?></span>
+                                </div>
+                            </div>
+                            <button class="view-details-btn" onclick="openStaffModal(<?= $staff['staff_id'] ?>)">
+                                View Task Details
+                            </button>
                         </div>
-                    </div>
-                    <div class="staff-details">
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Contact:</span>
-                            <span class="detail-value">09000000000</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Active Tasks:</span>
-                            <span class="detail-value">5</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Completed Tasks:</span>
-                            <span class="detail-value">23</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Workload:</span>
-                            <span class="detail-value">Medium</span>
-                        </div>
-                    </div>
-                    <button class="view-details-btn" onclick="openStaffModal()">View Task Details</button>
-                </div>
-
-                <div class="staff-card">
-                    <div class="staff-header">
-                        <div class="staff-avatar"></div>
-                        <div class="staff-info">
-                            <div class="staff-name">Sarah Johnson</div>
-                            <div class="staff-email">sarah.j@approvative.com</div>
-                        </div>
-                    </div>
-                    <div class="staff-details">
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Contact:</span>
-                            <span class="detail-value">09000000000</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Active Tasks:</span>
-                            <span class="detail-value">5</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Completed Tasks:</span>
-                            <span class="detail-value">23</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Workload:</span>
-                            <span class="detail-value">Medium</span>
-                        </div>
-                    </div>
-                    <button class="view-details-btn" onclick="openStaffModal()">View Task Details</button>
-                </div>
-
-                <div class="staff-card">
-                    <div class="staff-header">
-                        <div class="staff-avatar"></div>
-                        <div class="staff-info">
-                            <div class="staff-name">Sarah Johnson</div>
-                            <div class="staff-email">sarah.j@approvative.com</div>
-                        </div>
-                    </div>
-                    <div class="staff-details">
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Contact:</span>
-                            <span class="detail-value">09000000000</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Active Tasks:</span>
-                            <span class="detail-value">5</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Completed Tasks:</span>
-                            <span class="detail-value">23</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Workload:</span>
-                            <span class="detail-value">Medium</span>
-                        </div>
-                    </div>
-                    <button class="view-details-btn" onclick="openStaffModal()">View Task Details</button>
-                </div>
-
-                <div class="staff-card">
-                    <div class="staff-header">
-                        <div class="staff-avatar"></div>
-                        <div class="staff-info">
-                            <div class="staff-name">Sarah Johnson</div>
-                            <div class="staff-email">sarah.j@approvative.com</div>
-                        </div>
-                    </div>
-                    <div class="staff-details">
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Contact:</span>
-                            <span class="detail-value">09000000000</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Active Tasks:</span>
-                            <span class="detail-value">12</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Completed Tasks:</span>
-                            <span class="detail-value">23</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Workload:</span>
-                            <span class="detail-value">High</span>
-                        </div>
-                    </div>
-                    <button class="view-details-btn" onclick="openStaffModal()">View Task Details</button>
-                </div>
-
-                <div class="staff-card">
-                    <div class="staff-header">
-                        <div class="staff-avatar"></div>
-                        <div class="staff-info">
-                            <div class="staff-name">Sarah Johnson</div>
-                            <div class="staff-email">sarah.j@approvative.com</div>
-                        </div>
-                    </div>
-                    <div class="staff-details">
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Contact:</span>
-                            <span class="detail-value">09000000000</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Active Tasks:</span>
-                            <span class="detail-value">2</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Completed Tasks:</span>
-                            <span class="detail-value">23</span>
-                        </div>
-                        <div class="staff-detail-row">
-                            <span class="detail-label">Workload:</span>
-                            <span class="detail-value">Low</span>
-                        </div>
-                    </div>
-                    <button class="view-details-btn" onclick="openStaffModal()">View Task Details</button>
-                </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>
 
     <!-- Staff Task Details Modal -->
-    <div id="staffModal" class="modal">
-        <div class="modal-content">
+    <div id="staffModal" class="staff-manage-modal">
+        <div class="staff-manage-modal-content">
             <button class="modal-close" onclick="closeStaffModal()">×</button>
             
             <div class="modal-staff-header">
                 <div class="modal-staff-avatar"></div>
                 <div class="modal-staff-info">
-                    <div class="modal-staff-name">Sarah Johnson</div>
-                    <div class="modal-staff-email">sarah.j@approvative.com</div>
+                    <div class="modal-staff-name" id="modalStaffName">Loading...</div>
+                    <div class="modal-staff-email" id="modalStaffEmail">Loading...</div>
                 </div>
             </div>
 
-            <div class="status-tabs">
-                <button class="status-tab">PENDING</button>
-                <button class="status-tab">IN PROGRESS</button>
-                <button class="status-tab">COMPLETED</button>
-            </div>
-
-            <div class="filter-section-modal">
-                <span class="filter-label">Filtered by Status:</span>
-                <div class="filter-buttons">
-                    <button class="filter-btn active">All</button>
-                    <button class="filter-btn">Pending</button>
-                    <button class="filter-btn">In progress</button>
-                    <button class="filter-btn">completed</button>
+                <div class="status-tabs">
+                    <button class="status-tab active" onclick="filterTasks('all')">ALL</button>
+                    <button class="status-tab" onclick="filterTasks('pending')">PENDING</button>
+                    <button class="status-tab" onclick="filterTasks('in_progress')">IN PROGRESS</button>
+                    <button class="status-tab" onclick="filterTasks('completed')">COMPLETED</button>
                 </div>
-            </div>
-
-            <table class="tasks-table">
-                <thead>
-                    <tr>
-                        <th>Client Name</th>
-                        <th>Service</th>
-                        <th>Assigned step</th>
-                        <th>status</th>
-                        <th>Date assigned</th>
-                        <th>Deadline</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>
-                            <div class="task-client-name">John Doe</div>
-                            <div class="task-client-email">john.doe@email.com</div>
-                        </td>
-                        <td>Bookkeeping corporation</td>
-                        <td>
-                            <div class="task-step">Step 1:<br>Document<br>Review</div>
-                        </td>
-                        <td>
-                            <span class="status-badge status-in-progress">In progress</span>
-                        </td>
-                        <td>jan 10</td>
-                        <td>jan 10</td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <div class="task-client-name">John Doe</div>
-                            <div class="task-client-email">john.doe@email.com</div>
-                        </td>
-                        <td>Bookkeeping corporation</td>
-                        <td>
-                            <div class="task-step">Step 2: Data<br>Entry</div>
-                        </td>
-                        <td>
-                            <span class="status-badge status-in-progress">In progress</span>
-                        </td>
-                        <td>march 10</td>
-                        <td>march 10</td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <div class="task-client-name">John Doe</div>
-                            <div class="task-client-email">john.doe@email.com</div>
-                        </td>
-                        <td>Bookkeeping corporation</td>
-                        <td>
-                            <div class="task-step">Step 1:<br>Document<br>Review</div>
-                        </td>
-                        <td>
-                            <span class="status-badge status-pending">Pending</span>
-                        </td>
-                        <td>may 2</td>
-                        <td>may 2</td>
-                    </tr>
-                </tbody>
-            </table>
+                <div class="table-wrapper">
+                <table class="tasks-table">
+                    <thead>
+                        <tr>
+                            <th>Client Name</th>
+                            <th>Service</th>
+                            <th>Assigned Step</th>
+                            <th>Status</th>
+                            <th>Date Assigned</th>
+                            <th>Deadline</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modalTasksBody">
+                        <tr><td colspan="6">Click "View Task Details" on a staff card to load tasks.</td></tr>
+                    </tbody>
+                </table>
+                </div>
         </div>
     </div>
 
     <script>
-        function openStaffModal() {
-            document.getElementById('staffModal').classList.add('active');
+        let currentStaffId = null;
+
+        function openStaffModal(staffId) {
+            currentStaffId = staffId;
+            const modal = document.getElementById('staffModal');
+            modal.classList.add('active');
+
+            // Load staff tasks via page reload with query params (simple approach)
+            // For better UX, you could switch to AJAX later
+            window.location.href = `?view_staff=${staffId}`;
+        }
+
+        function filterTasks(status) {
+            if (!currentStaffId) return;
+            let url = `?view_staff=${currentStaffId}`;
+            if (status !== 'all') {
+                url += `&status=${status}`;
+            }
+            window.location.href = url;
         }
 
         function closeStaffModal() {
             document.getElementById('staffModal').classList.remove('active');
+            // Optional: clear URL params
+            // history.replaceState({}, '', window.location.pathname);
         }
 
         // Close modal when clicking outside
@@ -278,6 +165,43 @@
                 closeStaffModal();
             }
         }
+
+        // Auto-load modal content if opened via URL
+        <?php if ($modalStaff): ?>
+            document.getElementById('modalStaffName').textContent = "<?= htmlspecialchars($modalStaff['first_name'] . ' ' . $modalStaff['last_name']) ?>";
+            document.getElementById('modalStaffEmail').textContent = "<?= htmlspecialchars($modalStaff['email']) ?>";
+
+            const tasksBody = document.getElementById('modalTasksBody');
+            tasksBody.innerHTML = '';
+
+            <?php if (empty($modalTasks)): ?>
+                tasksBody.innerHTML = '<tr><td colspan="6">No tasks found.</td></tr>';
+            <?php else: ?>
+                <?php foreach ($modalTasks as $task): 
+                    $clientName = $task['client_first_name'] . ' ' . $task['client_last_name'];
+                    $stepDisplay = $task['step_name'] ? "Step " . $task['step_order'] . ": " . $task['step_name'] : 'General Task';
+                    $statusClass = str_replace('_', '-', $task['status']);
+                    $assignedDate = $task['status_changed_at'] ? date('M d', strtotime($task['status_changed_at'])) : 'N/A';
+                    $deadlineDate = $task['deadline'] ? date('M d', strtotime($task['deadline'])) : 'No deadline';
+                ?>
+                    tasksBody.innerHTML += `
+                        <tr>
+                            <td>
+                                <div class="task-client-name"><?= htmlspecialchars($clientName) ?></div>
+                                <div class="task-client-email"><?= htmlspecialchars($task['client_email']) ?></div>
+                            </td>
+                            <td><?= htmlspecialchars($task['service_name']) ?></td>
+                            <td><div class="task-step"><?= nl2br(htmlspecialchars($stepDisplay)) ?></div></td>
+                            <td><span class="status-badge status-<?= $statusClass ?>"><?= ucwords(str_replace('_', ' ', $task['status'])) ?></span></td>
+                            <td><?= $assignedDate ?></td>
+                            <td><?= $deadlineDate ?></td>
+                        </tr>
+                    `;
+                <?php endforeach; ?>
+            <?php endif; ?>
+
+            document.getElementById('staffModal').classList.add('active');
+        <?php endif; ?>
     </script>
 </body>
 </html>

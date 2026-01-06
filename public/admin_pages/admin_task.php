@@ -65,6 +65,7 @@
                 </div>
             </div>
 
+            <!-- Second task card (duplicate for example) -->
             <div class="task-card">
                 <div class="task-header">
                     <div class="task-info">
@@ -107,68 +108,48 @@
             
             <div class="modal-header">
                 <div class="modal-title">Assign Staff to Steps</div>
-                <div class="modal-subtitle">Client: Jane Smith | Service: HR Services</div>
+                <div class="modal-subtitle">
+                    Client: <strong>Jane Smith</strong> | Service: <strong>HR Services</strong>
+                </div>
             </div>
 
-            <div class="step-item">
-                <div class="step-header">
-                    <div class="step-number">1</div>
-                    <div class="step-info">
-                        <div class="step-title">Input steps</div>
-                    </div>
+            <div class="step-list">
+                <div class="step-row">
+                    <div class="step-circle">1</div>
+                    <input type="text" class="step-name-input" placeholder="Enter step name(e.g. Document review)">
+                    <select class="staff-select">
+                        <option>--select staff--</option>
+                        <option>Sarah Johnson</option>
+                        <option>Mike Wilson</option>
+                        <option>Emily Davis</option>
+                    </select>
                 </div>
-                <select class="staff-select">
-                    <option>--select staff--</option>
-                    <option>Sarah Johnson</option>
-                    <option>Mike Wilson</option>
-                    <option>Emily Davis</option>
-                </select>
+
+                <div class="step-row">
+                    <div class="step-circle">2</div>
+                    <input type="text" class="step-name-input" placeholder="Enter step name(e.g. Consultation & Assessment)" value="Consultation & Assessment">
+                    <select class="staff-select">
+                        <option>--select staff--</option>
+                        <option>Sarah Johnson</option>
+                        <option>Mike Wilson</option>
+                        <option>Emily Davis</option>
+                    </select>
+                </div>
+
+                <!-- You can add more step-row with inputs if needed -->
             </div>
 
-            <div class="step-item">
-                <div class="step-header">
-                    <div class="step-number">2</div>
-                    <div class="step-info">
-                        <div class="step-title">Consultation & Assessment</div>
-                        <div class="step-subtitle">Assign Staff Member:</div>
-                    </div>
-                </div>
-                <select class="staff-select">
-                    <option>--select staff--</option>
-                    <option>Sarah Johnson</option>
-                    <option>Mike Wilson</option>
-                    <option>Emily Davis</option>
-                </select>
-            </div>
-
-            <div class="step-item">
-                <div class="step-header">
-                    <div class="step-number">3</div>
-                    <div class="step-info">
-                        <div class="step-title">Consultation & Assessment</div>
-                        <div class="step-subtitle">Assign Staff Member:</div>
-                    </div>
-                </div>
-                <select class="staff-select">
-                    <option>--select staff--</option>
-                    <option>Sarah Johnson</option>
-                    <option>Mike Wilson</option>
-                    <option>Emily Davis</option>
-                </select>
+            <div class="add-step-section">
+                <button class="add-step-btn">+ Add Another Step</button>
             </div>
 
             <div class="deadline-section">
-                <div class="deadline-label">Deadline:</div>
-                <input type="text" class="deadline-input" placeholder="dd - yyy" value="dd - yyy">
-            </div>
-
-            <div class="frame-info">
-                <span>Frame 61</span>
-                <span>Frame 62</span>
+                <div class="deadline-label">Deadline</div>
+                <input type="text" class="deadline-input" placeholder="dd - yyy">
             </div>
 
             <div class="modal-actions">
-                <button class="save-btn">Save Assignments</button>
+                <button class="save-btn">save Assignments</button>
                 <button class="cancel-modal-btn" onclick="closeModal()">Cancel</button>
             </div>
         </div>
