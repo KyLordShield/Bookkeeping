@@ -1,0 +1,115 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  height: 100vh;
+  font-family: 'Azeret Mono', monospace;
+}
+
+.login-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100vh;
+}
+
+/* LEFT PANEL */
+.login-panel {
+  background-color: #810100;
+  color: #ffffff;
+  padding: 80px 70px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-panel h1 {
+  font-family: 'Inria Serif', serif;
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.subtitle {
+  font-size: 14px;
+  opacity: 0.85;
+  margin-bottom: 40px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+input {
+  height: 42px;
+  padding: 10px;
+  border: none;
+  border-radius: 3px;
+  margin-bottom: 20px;
+  font-family: 'Azeret Mono', monospace;
+}
+
+.forgot {
+  font-size: 11px;
+  color: #ffffff;
+  text-align: right;
+  margin-bottom: 30px;
+  text-decoration: underline;
+}
+
+button {
+  height: 44px;
+  background: #000000;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  font-family: 'Azeret Mono', monospace;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.signup {
+  margin-top: 30px;
+  font-size: 12px;
+  text-align: center;
+}
+
+
+.signup a {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+/* RIGHT PANEL */
+.image-panel {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.image-panel img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .login-container {
+    grid-template-columns: 1fr;
+  }
+
+  .image-panel {
+    display: none;
+  }
+}
