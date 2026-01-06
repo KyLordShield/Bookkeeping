@@ -11,8 +11,8 @@
         Overview
     </a>
 
-    <a href="admin_task.php"
-       class="nav-button <?php echo ($current_page === 'admin_task.php') ? 'active' : ''; ?>">
+    <a href="staff_updates.php"
+       class="nav-button <?php echo ($current_page === 'staff_updates.php') ? 'active' : ''; ?>">
         Update
     </a>
 
