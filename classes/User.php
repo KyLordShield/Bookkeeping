@@ -1,6 +1,6 @@
 <?php
 
-require_once '../config/Database.php'; // Make sure this file is included
+require_once __DIR__ . '/../config/Database.php';
 
 class User
 {
