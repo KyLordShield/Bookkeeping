@@ -1,5 +1,6 @@
 <?php
 
+// Adjust path if your config folder is located differently
 require_once __DIR__ . '/../config/Database.php';
 
 class User
@@ -18,10 +19,7 @@ class User
     }
 
     /**
-     * Attempt to log in a user
-     * @param string $username
-     * @param string $password
-     * @return bool True on success, false on failure
+     * Attempt to log in a user (using plain text password - DEVELOPMENT ONLY)
      */
     public function login($username, $password)
     {
@@ -35,15 +33,15 @@ class User
             $stmt->execute([$username]);
             $user = $stmt->fetch();
 
+            // Plain text comparison - DEVELOPMENT/TESTING PURPOSES ONLY
             if ($user && $user['status'] === 'active' && $password === $user['password_hash']) {
-                // Successful login
                 $this->user_id   = $user['user_id'];
                 $this->username  = $user['username'];
                 $this->client_id = $user['client_id'];
                 $this->staff_id  = $user['staff_id'];
                 $this->is_admin  = $user['is_admin'];
 
-                // Determine role with priority: admin > staff > client
+                // Determine role
                 if ($this->is_admin) {
                     $this->role = 'admin';
                 } elseif ($this->staff_id !== null) {
@@ -51,15 +49,14 @@ class User
                 } elseif ($this->client_id !== null) {
                     $this->role = 'client';
                 } else {
-                    $this->role = 'user'; // fallback (shouldn't happen)
+                    $this->role = 'user'; // fallback
                 }
 
-                // Start session and store data
                 if (session_status() === PHP_SESSION_NONE) {
                     session_start();
                 }
 
-                session_regenerate_id(true); // Security
+                session_regenerate_id(true);
 
                 $_SESSION['user_id']    = $this->user_id;
                 $_SESSION['username']   = $this->username;
@@ -71,22 +68,18 @@ class User
                     $_SESSION['client_id'] = $this->client_id;
                 }
 
-                // Update last login
                 $this->updateLastLogin();
 
                 return true;
             }
 
-            return false; // Invalid credentials or inactive
+            return false;
         } catch (Exception $e) {
             error_log("Login error: " . $e->getMessage());
             return false;
         }
     }
 
-    /**
-     * Update last_login timestamp
-     */
     private function updateLastLogin()
     {
         try {
@@ -97,10 +90,6 @@ class User
         }
     }
 
-    /**
-     * Get the dashboard URL based on user role
-     * @return string
-     */
     public function getDashboardUrl()
     {
         switch ($this->role) {
@@ -111,53 +100,33 @@ class User
             case 'client':
                 return '../public/client_pages/client_dashboard.php';
             default:
-                return '../public/login_page.php'; // fallback
+                return '../public/login_page.php';
         }
     }
 
-    /**
-     * Check if user is logged in (static helper)
-     * @return bool
-     */
     public static function isLoggedIn()
     {
         return isset($_SESSION['user_id']);
     }
 
-    /**
-     * Get current logged-in user's role (static)
-     * @return string|null
-     */
     public static function getRole()
     {
         return $_SESSION['role'] ?? null;
     }
 
-    /**
-     * Get current user ID
-     */
     public static function getUserId()
     {
         return $_SESSION['user_id'] ?? null;
     }
 
-    /**
-     * Get linked client_id or staff_id
-     */
     public static function getLinkedId()
     {
         $role = self::getRole();
-        if ($role === 'staff') {
-            return $_SESSION['staff_id'] ?? null;
-        } elseif ($role === 'client') {
-            return $_SESSION['client_id'] ?? null;
-        }
+        if ($role === 'staff') return $_SESSION['staff_id'] ?? null;
+        if ($role === 'client') return $_SESSION['client_id'] ?? null;
         return null;
     }
 
-    /**
-     * Logout the user
-     */
     public static function logout()
     {
         if (session_status() === PHP_SESSION_NONE) {
@@ -167,9 +136,6 @@ class User
         session_destroy();
     }
 
-    /**
-     * Redirect to appropriate dashboard (helper for protected pages)
-     */
     public static function redirectToDashboard()
     {
         if (!self::isLoggedIn()) {
@@ -187,5 +153,58 @@ class User
 
         header("Location: $url");
         exit;
+    }
+
+    /**
+     * Create new client user account - PLAIN TEXT password storage (DEVELOPMENT ONLY)
+     */
+    public static function createClientUser(
+        int $client_id,
+        string $username,
+        string $password,
+        bool $is_active = true,
+        string &$error = ''
+    ): bool {
+        try {
+            $db = Database::getInstance()->getConnection();
+
+            // Check if username already exists
+            $check = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
+            $check->execute([$username]);
+            if ($check->fetchColumn() > 0) {
+                $error = "Username '$username' is already taken.";
+                return false;
+            }
+
+            // Check if client already has a user account
+            $checkClient = $db->prepare("SELECT COUNT(*) FROM users WHERE client_id = ?");
+            $checkClient->execute([$client_id]);
+            if ($checkClient->fetchColumn() > 0) {
+                $error = "This client already has a user account.";
+                return false;
+            }
+
+            $status = $is_active ? 'active' : 'inactive';
+
+            $stmt = $db->prepare("
+                INSERT INTO users 
+                (username, password_hash, client_id, is_admin, status, created_at) 
+                VALUES (?, ?, ?, FALSE, ?, NOW())
+            ");
+
+            // Store password as plain text (DEVELOPMENT ONLY - NOT SECURE FOR PRODUCTION)
+            $success = $stmt->execute([$username, $password, $client_id, $status]);
+
+            if (!$success) {
+                $error = "Database error while creating user.";
+            }
+
+            return $success;
+
+        } catch (Exception $e) {
+            error_log("Error creating client user: " . $e->getMessage());
+            $error = "System error: " . $e->getMessage();
+            return false;
+        }
     }
 }
