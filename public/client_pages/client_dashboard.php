@@ -1,19 +1,168 @@
+<?php
+// client_dashboard.php - Fixed to use static Client methods
+session_start();
+
+// Redirect if not logged in as client
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
+    header("Location: ../../login.php");
+    exit();
+}
+
+require_once __DIR__ . '/../../config/Database.php';
+require_once __DIR__ . '/../../classes/Client.php';
+
+$clientId = (int)$_SESSION['client_id'];
+
+// Get client full name (using existing static method)
+$client = Client::findById($clientId);
+$clientName = $client 
+    ? htmlspecialchars($client['first_name'] . ' ' . $client['last_name'])
+    : 'Client';
+
+// Get client's services with progress
+// Note: You'll need to make getClientServices() static too - see fix below
+$services = Client::getClientServices($clientId);
+
+// Calculate totals
+$totalServices = count($services);
+$inProgress = 0;
+$completed  = 0;
+foreach ($services as $s) {
+    if ($s['overall_status'] === 'in_progress') $inProgress++;
+    if ($s['overall_status'] === 'completed')   $completed++;
+}
+
+// Get upcoming APPROVED service requests (only preferred date/time from approved requests)
+$upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Dashboard</title>
-    
-    <!-- Global styles that apply to all pages -->
-    <style>
-        
-    </style>
 
-    <!-- Include the sidebar-specific CSS -->
-     <link rel="stylesheet" href="../assets/css_file/client_pages.css">
+    <link rel="stylesheet" href="../assets/css_file/client_pages.css">
     <link rel="stylesheet" href="../assets/css_file/navigation_bar.css">
-    
+
+    <style>
+        .header {
+            margin-bottom: 2.5rem;
+        }
+        .header h1 {
+            font-size: 2.3rem;
+            margin-bottom: 0.5rem;
+            color: #f6f7f8ff;
+        }
+        .header p {
+            color: #bbc3ceff;
+            font-size: 1.1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.6rem;
+            margin-bottom: 3rem;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem 0.5rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .stat-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        .stat-label {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2.2rem;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.6rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        }
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.6rem;
+            color: #1e293b;
+        }
+
+        .service-item {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .service-item:last-child { border-bottom: none; }
+        .service-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.6rem;
+        }
+        .service-dates {
+            color: #64748b;
+            font-size: 0.95rem;
+            margin-bottom: 0.8rem;
+        }
+        .service-status {
+            margin: 0.8rem 0;
+        }
+        .status-progress {
+            background: #fef3c7;
+            color: #d97706;
+            padding: 6px 12px;
+            border-radius: 14px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .status-completed {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 6px 12px;
+            border-radius: 14px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .next-step {
+            color: #831212ff;
+            font-weight: 500;
+        }
+
+        .request-item {
+            padding: 1.3rem 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .request-item:last-child { border-bottom: none; }
+        .request-title {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 0.4rem;
+        }
+        .request-date, .request-time {
+            color: #64748b;
+            font-size: 0.95rem;
+        }
+        .request-badge {
+            background: #10b981;
+            color: white;
+            font-size: 0.8rem;
+            padding: 3px 9px;
+            border-radius: 12px;
+            margin-left: 0.7rem;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -21,73 +170,81 @@
 
         <div class="main-content">
             <div class="header">
-                <h1>Welcome back, USER</h1>
+                <h1>Welcome back, <?= $clientName ?></h1>
                 <p>Here is an overview of your services and progress</p>
             </div>
 
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon">🛒</div>
-                    <div class="stat-label">Total Service Availed</div>
+                    <div class="stat-label">Total Services Availed<br><?= $totalServices ?></div>
                 </div>
                 <div class="stat-card">
-                    <div class="spinner"></div>
-                    <div class="stat-label">In progress</div>
+                    <div class="stat-icon">⚙️</div>
+                    <div class="stat-label">In Progress<br><?= $inProgress ?></div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon">✓</div>
-                    <div class="stat-label">Completed</div>
+                    <div class="stat-label">Completed<br><?= $completed ?></div>
                 </div>
             </div>
 
             <div class="content-grid">
                 <div class="card">
-                    <div class="card-title">Current Service Progress</div>
-                    
-                    <div class="service-item">
-                        <div class="service-name">Business Registration</div>
-                        <div class="service-dates">Started: Jan 10, 2025</div>
-                        <div class="service-dates">Progress</div>
-                        <div class="service-status">
-                            <span class="status-progress">in progress</span>
-                        </div>
-                        <div class="next-step">Next Step: Permanent Verification</div>
-                    </div>
+                    <div class="card-title">Your Current Services</div>
 
-                    <div class="divider"></div>
-
-                    <div class="service-item">
-                        <div class="service-name">Tax Consultation</div>
-                        <div class="service-dates">Completed: Jan 15, 2025</div>
-                        <div class="service-dates">Progress</div>
-                        <div class="service-status">
-                            <span class="status-completed">completed</span>
-                        </div>
-                        <div class="next-step">Next Step: N/A</div>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="service-item">
-                        <div class="service-name">Legal Advisory</div>
-                        <div class="service-dates">Started: Jan 20, 2025</div>
-                        <div class="service-dates">Progress</div>
-                        <div class="service-status">
-                            <span class="status-progress">in progress</span>
-                        </div>
-                        <div class="next-step">Next Step: Initial Consultation Scheduled</div>
-                    </div>
+                    <?php if (empty($services)): ?>
+                        <p style="color:#64748b; text-align:center; padding:3rem 0;">
+                            You haven't started any services yet.
+                        </p>
+                    <?php else: ?>
+                        <?php foreach ($services as $service): ?>
+                            <div class="service-item">
+                                <div class="service-name"><?= htmlspecialchars($service['service_name']) ?></div>
+                                <div class="service-dates">
+                                    Started: <?= $service['start_date'] ? date('M d, Y', strtotime($service['start_date'])) : 'N/A' ?>
+                                </div>
+                                <div class="service-status">
+                                    <span class="status-<?= htmlspecialchars($service['overall_status']) ?>">
+                                        <?= ucfirst($service['overall_status']) ?>
+                                    </span>
+                                    <?php if (!empty($service['total_steps']) && $service['total_steps'] > 0): ?>
+                                        <span style="color:#64748b; font-size:0.9rem; margin-left:0.8rem;">
+                                            (<?= $service['completed_steps'] ?? 0 ?>/<?= $service['total_steps'] ?> steps)
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="next-step">
+                                    Next Step: <?= htmlspecialchars($service['next_step'] ?? 'N/A') ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
 
                 <div class="card">
-                    <div class="card-title">Upcoming Appointments</div>
-                    
-                    <div class="appointment">
-                        <div class="appointment-title">Consultation Session</div>
-                        <div class="appointment-date">Jan 28, 2025</div>
-                        <div class="appointment-time">10:00 AM</div>
-                        <div class="appointment-type">Video Call</div>
-                    </div>
+                    <div class="card-title">Upcoming Approved Service Requests</div>
+
+                    <?php if (empty($upcomingRequests)): ?>
+                        <p style="color:#64748b; text-align:center; padding:3rem 0;">
+                            No upcoming approved service requests in the next 14 days.
+                        </p>
+                    <?php else: ?>
+                        <?php foreach ($upcomingRequests as $req): ?>
+                            <div class="request-item">
+                                <div class="request-title">
+                                    <?= htmlspecialchars($req['title']) ?>
+                                    <span class="request-badge">Approved</span>
+                                </div>
+                                <div class="request-date">
+                                    <?= date('M d, Y', strtotime($req['event_date'])) ?>
+                                </div>
+                                <div class="request-time">
+                                    <?= $req['event_time'] ? date('g:i A', strtotime($req['event_time'])) : 'Time not specified' ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

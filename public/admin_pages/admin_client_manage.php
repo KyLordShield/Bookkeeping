@@ -754,7 +754,9 @@ foreach ($clients as $client) {
                 if (data.success) {
                     Toast.fire({ icon: 'success', title: 'Service added successfully!' });
                     closeServiceSelectionModal();
-                    location.reload();
+                    setTimeout(() => {
+                            location.reload();
+                        }, 3600); // wait for toast to finish
                 } else {
                     Swal.fire('Error', data.message || 'Failed to add service', 'error');
                 }
@@ -911,7 +913,7 @@ foreach ($clients as $client) {
                         openUserModal(data.client_id);
                     } else {
                         closeClientModal();
-                        location.reload();
+                        setTimeout(() => location.reload(), 3600);
                     }
                 } else {
                     Swal.fire({
@@ -950,7 +952,7 @@ foreach ($clients as $client) {
                 if (data.success) {
                     Toast.fire({ icon: 'success', title: 'Account created successfully!' });
                     closeUserModal();
-                    location.reload();
+                    setTimeout(() => location.reload(), 3600);
                 } else {
                     Swal.fire('Error', data.message || 'Failed to create account', 'error');
                 }
@@ -982,7 +984,7 @@ foreach ($clients as $client) {
 
                 if (data.success) {
                     Toast.fire({ icon: 'success', title: 'Request accepted!' });
-                    location.reload();
+                    setTimeout(() => location.reload(), 3600);
                 } else {
                     Swal.fire('Error', data.message || 'Failed to accept request', 'error');
                 }
@@ -1013,7 +1015,7 @@ foreach ($clients as $client) {
 
                 if (data.success) {
                     Toast.fire({ icon: 'success', title: 'Request rejected!' });
-                    location.reload();
+                    setTimeout(() => location.reload(), 3600);
                 } else {
                     Swal.fire('Error', data.message || 'Failed to reject request', 'error');
                 }

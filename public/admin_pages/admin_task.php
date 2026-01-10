@@ -217,10 +217,12 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
 
         <?php if (empty($tasks)): ?>
-            <div style="text-align:center; padding:80px 0; color:#777; font-style:italic;">
-                No client services found<?= $search ? " matching “$search”" : "" ?>.
-            </div>
-        <?php endif; ?>
+    <div style="text-align:center; padding:80px 0; color:#777; font-style:italic;">
+        No client services found
+        <?= !empty($search) ? ' matching “' . htmlspecialchars($search) . '”' : '' ?>.
+    </div>
+<?php endif; ?>
+
 
         <?php foreach ($tasks as $task): 
             $isPending = $task['overall_status'] === 'pending';

@@ -107,8 +107,8 @@ if (isset($_GET['edit_staff'])) {
         .status-tab:hover { background: #d5dbdb; }
         .status-tab.active { background: #3498db; color: white; }
 
-        .add-staff-btn { background: #27ae60; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; margin-bottom: 20px; }
-        .add-staff-btn:hover { background: #219a52; }
+        .add-staff-btn { background: #050505ff; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; margin-bottom: 20px; }
+        .add-staff-btn:hover { background: #030303ff; }
 
         .edit-btn { background: #f39c12; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
         .delete-btn { background: #e74c3c; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; }

@@ -99,4 +99,86 @@ class Client {
         $stmt = self::db()->prepare("UPDATE client_services SET overall_status = 'on_hold' WHERE client_id = ?");
         return $stmt->execute([$client_id]);
     }
+
+
+
+/**
+ * Get upcoming appointments + approved service requests for this specific client
+ * (mirrors admin logic but client-specific)
+ */
+public function getUpcomingEventsForClient(int $clientId, int $limit = 8): array
+{
+    $stmt = $this->pdo->prepare("
+        -- Client's confirmed/scheduled appointments
+        SELECT 
+            'appointment' AS type,
+            a.appointment_id AS id,
+            a.appointment_date AS event_date,
+            a.appointment_time AS event_time,
+            COALESCE(se.service_name, a.appointment_type, 'Consultation') AS title,
+            a.appointment_type
+        FROM appointments a
+        LEFT JOIN services se ON a.service_id = se.service_id
+        WHERE a.client_id = :client_id
+          AND a.appointment_date >= CURDATE()
+          AND a.appointment_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+          AND a.status IN ('scheduled', 'confirmed')
+
+        UNION ALL
+
+        -- Client's APPROVED service requests with preferred date/time
+        SELECT 
+            'request' AS type,
+            sr.request_id AS id,
+            sr.preferred_date AS event_date,
+            sr.preferred_time AS event_time,
+            se.service_name AS title,
+            NULL AS appointment_type
+        FROM service_requests sr
+        JOIN services se ON sr.service_id = se.service_id
+        WHERE sr.client_id = :client_id
+          AND sr.preferred_date >= CURDATE()
+          AND sr.preferred_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+          AND sr.request_status = 'approved'
+          AND sr.preferred_date IS NOT NULL
+
+        ORDER BY event_date ASC, event_time ASC
+        LIMIT :limit
+    ");
+
+    $stmt->bindValue(':client_id', $clientId, PDO::PARAM_INT);
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Get upcoming approved service requests with preferred date/time
+ * Only for this specific client
+ */
+
+
+public static function getUpcomingApprovedRequests($clientId, $limit = 8): array {
+    $stmt = self::db()->prepare("
+        SELECT 
+            sr.request_id AS id,
+            sr.preferred_date AS event_date,
+            sr.preferred_time AS event_time,
+            se.service_name AS title
+        FROM service_requests sr
+        JOIN services se ON sr.service_id = se.service_id
+        WHERE sr.client_id = ?
+          AND sr.preferred_date >= CURDATE()
+          AND sr.preferred_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+          AND sr.request_status = 'approved'
+          AND sr.preferred_date IS NOT NULL
+        ORDER BY sr.preferred_date ASC, sr.preferred_time ASC
+        LIMIT ?
+    ");
+
+    $stmt->execute([$clientId, $limit]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+  
 }

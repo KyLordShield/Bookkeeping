@@ -2,75 +2,111 @@
 session_start();
 require_once __DIR__ . '/../../config/Database.php';
 
-// Handle AJAX request for meeting submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_meeting') {
+/*
+|--------------------------------------------------------------------------
+| HANDLE AJAX MEETING REQUEST
+|--------------------------------------------------------------------------
+*/
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['action'])
+    && $_POST['action'] === 'submit_meeting'
+) {
+
     header('Content-Type: application/json');
-    
-    // Check if user is logged in
+
+    // 1️⃣ AUTH CHECK
     if (!isset($_SESSION['user_id'])) {
         echo json_encode(['success' => false, 'message' => 'User not authenticated']);
         exit;
     }
 
     try {
-        $service_name = trim($_POST['service_name'] ?? '');
-        $preferred_date = trim($_POST['preferred_date'] ?? '');
-        $preferred_time = trim($_POST['preferred_time'] ?? '');
-        $additional_notes = trim($_POST['additional_notes'] ?? '');
-        $client_id = $_SESSION['user_id'];
+        $db = Database::getInstance()->getConnection();
 
-        // Validate required fields
+        // 2️⃣ GET CLIENT ID FROM USERS TABLE
+        $stmt = $db->prepare("
+            SELECT client_id 
+            FROM users 
+            WHERE user_id = ? AND client_id IS NOT NULL
+        ");
+        $stmt->execute([$_SESSION['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Only client accounts can request meetings'
+            ]);
+            exit;
+        }
+
+        $client_id = $user['client_id']; // ✅ CORRECT CLIENT ID
+
+        // 3️⃣ COLLECT & SANITIZE INPUT
+        $service_name      = trim($_POST['service_name'] ?? '');
+        $preferred_date    = trim($_POST['preferred_date'] ?? '');
+        $preferred_time    = trim($_POST['preferred_time'] ?? '');
+        $additional_notes  = trim($_POST['additional_notes'] ?? '');
+
         if (empty($service_name) || empty($preferred_date) || empty($preferred_time)) {
             echo json_encode(['success' => false, 'message' => 'Please fill in all required fields']);
             exit;
         }
 
-        // Get service_id from service_name
-        $db = Database::getInstance()->getConnection();
-        $stmt = $db->prepare("SELECT service_id FROM services WHERE service_name = ? AND is_active = 1");
+        // 4️⃣ GET SERVICE ID
+        $stmt = $db->prepare("
+            SELECT service_id 
+            FROM services 
+            WHERE service_name = ? AND is_active = 1
+        ");
         $stmt->execute([$service_name]);
         $service = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if (!$service) {
             echo json_encode(['success' => false, 'message' => 'Invalid service selected']);
             exit;
         }
-        
+
         $service_id = $service['service_id'];
 
-        // Validate date format
+        // 5️⃣ DATE VALIDATION
         $date = DateTime::createFromFormat('Y-m-d', $preferred_date);
         if (!$date || $date->format('Y-m-d') !== $preferred_date) {
             echo json_encode(['success' => false, 'message' => 'Invalid date format']);
             exit;
         }
 
-        // Check if date is in the past
-        $today = new DateTime();
-        $today->setTime(0, 0, 0);
+        $today = new DateTime('today');
         if ($date < $today) {
             echo json_encode(['success' => false, 'message' => 'Please select a future date']);
             exit;
         }
 
-        // Validate business hours (9 AM - 6 PM)
+        // 6️⃣ TIME VALIDATION (9AM–6PM)
         $time = DateTime::createFromFormat('H:i', $preferred_time);
-        if ($time) {
-            $hour = (int)$time->format('H');
-            if ($hour < 9 || $hour >= 18) {
-                echo json_encode(['success' => false, 'message' => 'Please select a time during business hours (9:00 AM - 6:00 PM)']);
-                exit;
-            }
+        if (!$time) {
+            echo json_encode(['success' => false, 'message' => 'Invalid time format']);
+            exit;
         }
 
-        // Insert into database
+        $hour = (int) $time->format('H');
+        if ($hour < 9 || $hour >= 18) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Please select a time during business hours (9:00 AM – 6:00 PM)'
+            ]);
+            exit;
+        }
+
+        // 7️⃣ INSERT SERVICE REQUEST
         $stmt = $db->prepare("
             INSERT INTO service_requests 
-            (client_id, service_id, preferred_date, preferred_time, additional_notes, request_status, requested_at) 
-            VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+                (client_id, service_id, preferred_date, preferred_time, additional_notes, request_status)
+            VALUES
+                (?, ?, ?, ?, ?, 'pending')
         ");
-        
-        $success = $stmt->execute([
+
+        $stmt->execute([
             $client_id,
             $service_id,
             $preferred_date,
@@ -78,23 +114,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $additional_notes
         ]);
 
-        if ($success) {
-            echo json_encode([
-                'success' => true, 
-                'message' => 'Meeting request submitted successfully! We will contact you soon to confirm.',
-                'request_id' => $db->lastInsertId()
-            ]);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Failed to submit request. Please try again.']);
-        }
+        echo json_encode([
+            'success'    => true,
+            'message'    => 'Meeting request submitted successfully! We will contact you soon.',
+            'request_id' => $db->lastInsertId()
+        ]);
+        exit;
 
     } catch (Exception $e) {
-        error_log("Meeting request error: " . $e->getMessage());
+        error_log('MEETING REQUEST ERROR: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'An error occurred. Please try again later.']);
+        exit;
     }
-    exit;
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
