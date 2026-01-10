@@ -36,4 +36,15 @@ class ServiceRequest {
         ");
         return $stmt->execute([$request_id]);
     }
+
+
+
+
+    public static function getById($id) {
+    $stmt = self::db()->prepare("SELECT * FROM service_requests WHERE request_id = ?");
+    $stmt->execute([$id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
 }
+}
+
+

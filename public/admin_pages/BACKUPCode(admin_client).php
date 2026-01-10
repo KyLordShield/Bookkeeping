@@ -1,15 +1,22 @@
 <?php
-// admin_client_manage.php - Each service per client shown as separate row
+// admin_client_manage.php - FIXED: All modals/buttons/filters/search now work
 
 session_start();
 
+// Paths (from public/admin_pages/ → ../../ → root)
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
 require_once __DIR__ . '/../../classes/Service.php';
 require_once __DIR__ . '/../../classes/ServiceRequest.php';
 require_once __DIR__ . '/../../classes/User.php';
 
-$current_staff_id = $_SESSION['staff_id'] ?? 1;
+// TEMP: disable auth during development (uncomment when ready)
+// if (!User::isLoggedIn() || User::getRole() !== 'admin') {
+//     header('Location: ../../login_page.php');
+//     exit;
+// }
+
+$current_staff_id = $_SESSION['staff_id'] ?? 1; // fallback for testing
 
 // Handle all POST/AJAX actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -33,9 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception("First Name, Last Name and Email are required.");
                 }
 
-                $service_id = (int)($_POST['service_id'] ?? 0);
-                if ($service_id <= 0) {
-                    throw new Exception("Please select a service.");
+                $services = array_filter(array_map('intval', $_POST['services'] ?? []));
+                if (empty($services)) {
+                    throw new Exception("Please select at least one service.");
                 }
 
                 if (Client::emailExists($data['email'])) {
@@ -48,21 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $client_id = Client::create($data);
                 if (!$client_id) throw new Exception("Failed to create client");
 
-                Client::assignService($client_id, $service_id, $current_staff_id, null, 'pending');
-
-                echo json_encode(['success' => true, 'client_id' => $client_id]);
-                break;
-
-            case 'add_service_to_existing':
-                $client_id = (int)($_POST['client_id'] ?? 0);
-                $service_id = (int)($_POST['service_id'] ?? 0);
-
-                if ($client_id <= 0 || $service_id <= 0) {
-                    throw new Exception("Invalid client or service ID");
+                foreach ($services as $sid) {
+                    Client::assignService($client_id, $sid, $current_staff_id, null, 'pending');
                 }
 
-                Client::assignService($client_id, $service_id, $current_staff_id, null, 'pending');
-                echo json_encode(['success' => true]);
+                echo json_encode(['success' => true, 'client_id' => $client_id]);
                 break;
 
             case 'edit_client':
@@ -91,22 +88,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 Client::update($client_id, $data);
 
-                // Update service if client_service_id and new_service_id are provided
-                if (isset($_POST['client_service_id']) && isset($_POST['new_service_id'])) {
-                    $client_service_id = (int)$_POST['client_service_id'];
-                    $new_service_id = (int)$_POST['new_service_id'];
-                    
-                    if ($client_service_id > 0 && $new_service_id > 0) {
-                        $db = Database::getInstance()->getConnection();
-                        // Update only if the service is still pending
-                        $stmt = $db->prepare("
-                            UPDATE client_services 
-                            SET service_id = ? 
-                            WHERE client_service_id = ? 
-                            AND overall_status = 'pending'
-                        ");
-                        $stmt->execute([$new_service_id, $client_service_id]);
-                    }
+                // Update services
+                Client::deleteAllServices($client_id);
+                $services = array_filter(array_map('intval', $_POST['services'] ?? []));
+                foreach ($services as $sid) {
+                    Client::assignService($client_id, $sid, $current_staff_id);
+                }
+
+                // Manual override only for on_hold
+                if (isset($_POST['account_status']) && $_POST['account_status'] === 'on_hold') {
+                    Client::setAllServicesOnHold($client_id);
                 }
 
                 echo json_encode(['success' => true]);
@@ -162,30 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $client_id = (int)($_POST['client_id'] ?? 0);
                 $client = Client::findById($client_id);
                 if ($client) {
-                    $clientServices = Client::getClientServices($client_id);
-                    
-                    // Separate pending and non-pending services
-                    $client['pending_service'] = null; // Single pending service
-                    $client['active_services'] = [];
-                    
-                    foreach ($clientServices as $cs) {
-                        if ($cs['overall_status'] === 'pending') {
-                            // Only store the first pending service (there should only be one)
-                            if (!$client['pending_service']) {
-                                $client['pending_service'] = [
-                                    'client_service_id' => $cs['client_service_id'],
-                                    'service_id' => $cs['service_id'],
-                                    'service_name' => $cs['service_name']
-                                ];
-                            }
-                        } else {
-                            $client['active_services'][] = [
-                                'service_id' => $cs['service_id'],
-                                'service_name' => $cs['service_name'],
-                                'status' => $cs['overall_status']
-                            ];
-                        }
-                    }
+                    $client['current_services'] = array_column(
+                        Client::getClientServices($client_id),
+                        'service_id'
+                    );
                 }
                 echo json_encode($client ?: []);
                 break;
@@ -199,40 +170,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Load data - Build client-service rows
-$clients = Client::getAll() ?? [];
-$services = Service::getAllActive() ?? [];
+// Load data
+$clients          = Client::getAll() ?? [];
+$services         = Service::getAllActive() ?? [];
 $pending_requests = ServiceRequest::getAllPending() ?? [];
-$pending_count = count($pending_requests);
-
-// Build rows: each client-service combination is a separate row
-$clientServiceRows = [];
-foreach ($clients as $client) {
-    $clientServices = Client::getClientServices($client['client_id']);
-    
-    if (empty($clientServices)) {
-        // Client with no services - show one row with "None"
-        $clientServiceRows[] = [
-            'client' => $client,
-            'service' => null,
-            'client_service_id' => null,
-            'status' => 'pending',
-            'has_requirements' => false
-        ];
-    } else {
-        // One row per service
-        foreach ($clientServices as $cs) {
-            $reqCount = Client::countRequirements($cs['client_service_id']);
-            $clientServiceRows[] = [
-                'client' => $client,
-                'service' => $cs,
-                'client_service_id' => $cs['client_service_id'],
-                'status' => $cs['overall_status'],
-                'has_requirements' => $reqCount > 0
-            ];
-        }
-    }
-}
 ?>
 
 <!DOCTYPE html>
@@ -267,95 +208,6 @@ foreach ($clients as $client) {
         .cm-status-in_progress { background:#cce5ff; color:#004085; }
         .cm-status-completed   { background:#d4edda; color:#155724; }
         .cm-status-on_hold     { background:#fdfd96; color:#333; }
-
-        .cm-service-request-btn { position: relative; }
-        .cm-notif-badge {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background: #dc3545;
-            color: white;
-            border-radius: 50%;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: bold;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .cm-choice-container { display: flex; gap: 20px; padding: 20px; }
-        .cm-choice-card {
-            flex: 1;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            padding: 30px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .cm-choice-card:hover {
-            border-color: #007bff;
-            background: #f8f9ff;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .cm-choice-card i { font-size: 48px; margin-bottom: 15px; display: block; color: #007bff; }
-        .cm-choice-card h3 { margin: 10px 0 5px; font-size: 18px; }
-        .cm-choice-card p { font-size: 13px; color: #666; margin: 0; }
-
-        .cm-client-selection-list { max-height: 400px; overflow-y: auto; }
-        .cm-client-selection-item {
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.2s;
-        }
-        .cm-client-selection-item:hover { background: #f8f9fa; border-color: #007bff; }
-        .cm-client-info h4 { margin: 0 0 5px; font-size: 16px; }
-        .cm-client-info p { margin: 2px 0; font-size: 13px; color: #666; }
-        .cm-btn-select {
-            padding: 8px 20px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        .cm-btn-select:hover { background: #0056b3; }
-        .cm-search-box {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        .cm-service-radio-group {
-            margin: 15px 0;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .cm-service-radio-group label {
-            display: block;
-            padding: 8px;
-            margin: 5px 0;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-        .cm-service-radio-group label:hover { background: #e9ecef; }
-        .cm-service-radio-group input[type="radio"] { margin-right: 8px; }
     </style>
 </head>
 <body>
@@ -370,13 +222,8 @@ foreach ($clients as $client) {
                         <p>View and manage clients & service requests</p>
                     </div>
                     <div class="cm-header-buttons">
-                        <button class="cm-service-request-btn" onclick="openServiceRequestModal()">
-                            SERVICE REQUESTS
-                            <?php if ($pending_count > 0): ?>
-                                <span class="cm-notif-badge"><?= $pending_count ?></span>
-                            <?php endif; ?>
-                        </button>
-                        <button class="cm-add-client-btn" onclick="openChoiceModal()">+ ADD CLIENT</button>
+                        <button class="cm-service-request-btn" onclick="openServiceRequestModal()">SERVICE REQUESTS</button>
+                        <button class="cm-add-client-btn" onclick="openAddClientModal()">+ ADD CLIENT</button>
                     </div>
                 </div>
 
@@ -391,7 +238,7 @@ foreach ($clients as $client) {
                 </div>
 
                 <div style="padding: 0 30px; margin-top: 20px;">
-                    <?php if (empty($clientServiceRows)): ?>
+                    <?php if (empty($clients)): ?>
                         <div style="text-align:center;padding:50px;color:#666;">
                             <h3>No clients yet</h3>
                             <p>Accept a request or add manually to begin</p>
@@ -400,38 +247,55 @@ foreach ($clients as $client) {
                         <table class="cm-client-table">
                             <thead>
                                 <tr>
-                                    <th>Client Name</th>
+                                    <th>Name</th>
                                     <th>Contact</th>
-                                    <th>Service</th>
+                                    <th>Service(s)</th>
                                     <th>Status</th>
-                                    <th>Has Requirements</th>
+                                    <th>Action Needed</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($clientServiceRows as $row): 
-                                    $client = $row['client'];
-                                    $service = $row['service'];
-                                    $status = $row['status'];
-                                    $hasReq = $row['has_requirements'] ? 'Yes' : 'No';
-                                    $serviceName = $service ? htmlspecialchars($service['service_name']) : 'None';
+                                <?php foreach ($clients as $client):
+                                    $clientServices = Client::getClientServices($client['client_id']);
+                                    $servicesNames  = array_column($clientServices, 'service_name');
+                                    $servicesStr    = $servicesNames ? implode(', ', $servicesNames) : 'None';
+
+                                    // Dynamic status calculation
+                                    $effectiveStatus = 'pending';
+                                    $hasRequirements = false;
+                                    $allCompleted = true;
+                                    $anyInProgress = false;
+
+                                    foreach ($clientServices as $cs) {
+                                        $reqCount = Client::countRequirements($cs['client_service_id']);
+                                        if ($reqCount > 0) $hasRequirements = true;
+
+                                        if ($cs['overall_status'] === 'in_progress') $anyInProgress = true;
+                                        if ($cs['overall_status'] !== 'completed') $allCompleted = false;
+                                    }
+
+                                    if ($hasRequirements) {
+                                        if ($allCompleted) $effectiveStatus = 'completed';
+                                        elseif ($anyInProgress) $effectiveStatus = 'in_progress';
+                                    }
+
+                                    $pendingCount = count(array_filter($clientServices, fn($s) => $s['overall_status'] === 'pending'));
+                                    $actionNeeded = $pendingCount > 0 ? "Pending steps ($pendingCount)" : 'None';
                                 ?>
-                                    <tr data-status="<?= $status ?>">
+                                    <tr data-status="<?= $effectiveStatus ?>">
                                         <td>
                                             <?= htmlspecialchars($client['first_name'] . ' ' . $client['last_name']) ?><br>
-                                            <small><?= $client['registration_date'] ?: '—' ?></small>
+                                            <small><?= $client['registration_date'] ?: '—' ?><br><?= htmlspecialchars($client['email']) ?></small>
                                         </td>
+                                        <td><?= htmlspecialchars($client['email']) ?><br><?= htmlspecialchars($client['phone'] ?: '—') ?></td>
+                                        <td><?= htmlspecialchars($servicesStr) ?></td>
                                         <td>
-                                            <?= htmlspecialchars($client['email']) ?><br>
-                                            <?= htmlspecialchars($client['phone'] ?: '—') ?>
-                                        </td>
-                                        <td><?= $serviceName ?></td>
-                                        <td>
-                                            <span class="cm-status-badge cm-status-<?= $status ?>">
-                                                <?= ucfirst(str_replace('_', ' ', $status)) ?>
+                                            <span class="cm-status-badge cm-status-<?= $effectiveStatus ?>">
+                                                <?= ucfirst($effectiveStatus) ?>
                                             </span>
                                         </td>
-                                        <td><?= $hasReq ?></td>
+                                        <td><?= $actionNeeded ?></td>
                                         <td>
                                             <button class="cm-btn-edit" onclick="openEditClientModal(<?= $client['client_id'] ?>)">Edit</button>
                                         </td>
@@ -441,87 +305,6 @@ foreach ($clients as $client) {
                         </table>
                     <?php endif; ?>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Choice Modal (New/Existing) -->
-    <div id="choiceModal" class="cm-modal">
-        <div class="cm-modal-content" style="max-width: 600px;">
-            <div class="cm-modal-header">
-                <h2>Add Client</h2>
-                <button class="cm-close-modal" onclick="closeChoiceModal()">×</button>
-            </div>
-            <div class="cm-modal-body">
-                <div class="cm-choice-container">
-                    <div class="cm-choice-card" onclick="openExistingClientModal()">
-                        <i>👤</i>
-                        <h3>Existing Client</h3>
-                        <p>Add service to existing client</p>
-                    </div>
-                    <div class="cm-choice-card" onclick="openAddClientModal()">
-                        <i>➕</i>
-                        <h3>New Client</h3>
-                        <p>Create new client with account</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Existing Client Selection Modal -->
-    <div id="existingClientModal" class="cm-modal">
-        <div class="cm-modal-content">
-            <div class="cm-modal-header">
-                <h2>Select Existing Client</h2>
-                <button class="cm-close-modal" onclick="closeExistingClientModal()">×</button>
-            </div>
-            <div class="cm-modal-body">
-                <input type="text" id="existingClientSearch" class="cm-search-box" placeholder="🔍 Search by name, email, or phone...">
-                
-                <div class="cm-client-selection-list" id="clientSelectionList">
-                    <?php foreach ($clients as $client): ?>
-                        <div class="cm-client-selection-item" data-client-search="<?= strtolower($client['first_name'] . ' ' . $client['last_name'] . ' ' . $client['email'] . ' ' . $client['phone']) ?>">
-                            <div class="cm-client-info">
-                                <h4><?= htmlspecialchars($client['first_name'] . ' ' . $client['last_name']) ?></h4>
-                                <p>📧 <?= htmlspecialchars($client['email']) ?></p>
-                                <p>📱 <?= htmlspecialchars($client['phone'] ?: 'No phone') ?></p>
-                            </div>
-                            <button class="cm-btn-select" onclick="selectExistingClient(<?= $client['client_id'] ?>, '<?= htmlspecialchars($client['first_name'] . ' ' . $client['last_name']) ?>')">
-                                Select
-                            </button>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Service Selection Modal (for existing client) -->
-    <div id="serviceSelectionModal" class="cm-modal">
-        <div class="cm-modal-content" style="max-width: 500px;">
-            <div class="cm-modal-header">
-                <h2>Select Service</h2>
-                <button class="cm-close-modal" onclick="closeServiceSelectionModal()">×</button>
-            </div>
-            <div class="cm-modal-body">
-                <p style="margin-bottom: 15px;">
-                    Client: <strong id="selectedClientName"></strong>
-                </p>
-                <input type="hidden" id="selectedClientId">
-                
-                <div class="cm-service-radio-group">
-                    <?php foreach ($services as $s): ?>
-                        <label>
-                            <input type="radio" name="selected_service" value="<?= $s['service_id'] ?>">
-                            <?= htmlspecialchars($s['service_name']) ?>
-                        </label>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            <div class="cm-modal-footer">
-                <button class="cm-btn-cancel" onclick="closeServiceSelectionModal()">Cancel</button>
-                <button class="cm-btn-save" onclick="saveServiceToExisting()">Add Service</button>
             </div>
         </div>
     </div>
@@ -610,41 +393,27 @@ foreach ($clients as $client) {
                         </div>
                     </div>
 
-                    <div class="cm-form-group" id="serviceSelectionDiv">
-                        <label>Service * (select one)</label>
-                        <div class="cm-service-radio-group">
+                    <div class="cm-form-group">
+                        <label>Services * (at least one required)</label>
+                        <div class="cm-checkbox-group" style="max-height:180px;overflow-y:auto;">
                             <?php foreach ($services as $s): ?>
-                                <label>
-                                    <input type="radio" name="service_id" value="<?= $s['service_id'] ?>">
+                                <label style="display:block;margin:6px 0;">
+                                    <input type="checkbox" name="services[]" value="<?= $s['service_id'] ?>">
                                     <?= htmlspecialchars($s['service_name']) ?>
                                 </label>
                             <?php endforeach; ?>
                         </div>
                     </div>
 
-                    <div class="cm-form-group" id="editPendingServicesDiv" style="display: none;">
-                        <label>Change Pending Service</label>
-                        <input type="hidden" id="client_service_id" name="client_service_id">
-                        <div class="cm-service-radio-group" style="max-height: 200px; overflow-y: auto;">
-                            <?php foreach ($services as $s): ?>
-                                <label>
-                                    <input type="radio" name="new_service_id" value="<?= $s['service_id'] ?>">
-                                    <?= htmlspecialchars($s['service_name']) ?>
-                                </label>
-                            <?php endforeach; ?>
-                        </div>
-                        <small style="color:#666;display:block;margin-top:8px;">
-                            ℹ️ You can only change a service while it's still pending.
-                        </small>
-                    </div>
-
-                    <div class="cm-form-group" id="activeServicesDiv" style="display: none;">
-                        <label>Active Services (cannot be modified)</label>
-                        <div id="activeServicesList" style="padding: 10px; background: #f8f9fa; border-radius: 4px; min-height: 40px;">
-                            <!-- Will be populated dynamically -->
-                        </div>
-                        <small style="color:#666;display:block;margin-top:8px;">
-                            🔒 These services are in progress or completed and cannot be changed.
+                    <div class="cm-form-group">
+                        <label>Manual Override (optional)</label>
+                        <select id="account_status" name="account_status">
+                            <option value="">Auto-calculate</option>
+                            <option value="on_hold">Force On Hold</option>
+                        </select>
+                        <small style="color:#666;display:block;margin-top:5px;">
+                            Status is auto-calculated from requirements.<br>
+                            Only "On Hold" can be manually forced.
                         </small>
                     </div>
                 </form>
@@ -690,6 +459,7 @@ foreach ($clients as $client) {
     </div>
 
     <script>
+        // SweetAlert Toast
         const Toast = Swal.mixin({
             toast: true,
             position: 'top-end',
@@ -699,70 +469,6 @@ foreach ($clients as $client) {
         });
 
         // ========== MODAL CONTROLS ==========
-        function openChoiceModal() {
-            document.getElementById('choiceModal').classList.add('active');
-        }
-
-        function closeChoiceModal() {
-            document.getElementById('choiceModal').classList.remove('active');
-        }
-
-        function openExistingClientModal() {
-            closeChoiceModal();
-            document.getElementById('existingClientModal').classList.add('active');
-        }
-
-        function closeExistingClientModal() {
-            document.getElementById('existingClientModal').classList.remove('active');
-        }
-
-        function selectExistingClient(clientId, clientName) {
-            document.getElementById('selectedClientId').value = clientId;
-            document.getElementById('selectedClientName').textContent = clientName;
-            
-            document.querySelectorAll('input[name="selected_service"]').forEach(radio => {
-                radio.checked = false;
-            });
-            
-            closeExistingClientModal();
-            document.getElementById('serviceSelectionModal').classList.add('active');
-        }
-
-        function closeServiceSelectionModal() {
-            document.getElementById('serviceSelectionModal').classList.remove('active');
-        }
-
-        async function saveServiceToExisting() {
-            const clientId = document.getElementById('selectedClientId').value;
-            const serviceRadio = document.querySelector('input[name="selected_service"]:checked');
-            
-            if (!serviceRadio) {
-                Toast.fire({ icon: 'warning', title: 'Please select a service' });
-                return;
-            }
-
-            const serviceId = serviceRadio.value;
-
-            try {
-                const res = await fetch('', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `action=add_service_to_existing&client_id=${clientId}&service_id=${serviceId}`
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    Toast.fire({ icon: 'success', title: 'Service added successfully!' });
-                    closeServiceSelectionModal();
-                    location.reload();
-                } else {
-                    Swal.fire('Error', data.message || 'Failed to add service', 'error');
-                }
-            } catch (err) {
-                Swal.fire('Error', 'Network error occurred', 'error');
-            }
-        }
-
         function openServiceRequestModal() {
             document.getElementById('serviceRequestModal').classList.add('active');
         }
@@ -772,25 +478,15 @@ foreach ($clients as $client) {
         }
 
         function openAddClientModal() {
-            closeChoiceModal();
             document.getElementById('modalTitle').textContent = 'Add New Client';
             document.getElementById('clientForm').reset();
             document.getElementById('client_id').value = '0';
-            document.querySelectorAll('input[name="service_id"]').forEach(rb => rb.checked = false);
-            
-            // Show only new service selection for add
-            document.getElementById('serviceSelectionDiv').style.display = 'block';
-            document.getElementById('editPendingServicesDiv').style.display = 'none';
-            document.getElementById('activeServicesDiv').style.display = 'none';
-            
+            document.querySelectorAll('input[name="services[]"]').forEach(cb => cb.checked = false);
             document.getElementById('clientModal').classList.add('active');
         }
 
         async function openEditClientModal(clientId) {
             document.getElementById('modalTitle').textContent = 'Edit Client';
-            
-            // Hide new service selection, show edit sections
-            document.getElementById('serviceSelectionDiv').style.display = 'none';
 
             try {
                 const res = await fetch('', {
@@ -808,42 +504,11 @@ foreach ($clients as $client) {
                     document.getElementById('phone').value = data.phone || '';
                     document.getElementById('company_name').value = data.company_name || '';
                     document.getElementById('business_type').value = data.business_type || '';
+                    document.getElementById('account_status').value = '';
 
-                    // Handle pending service (editable - single service only)
-                    const pendingServicesDiv = document.getElementById('editPendingServicesDiv');
-                    const activeServicesDiv = document.getElementById('activeServicesDiv');
-                    const activeServicesList = document.getElementById('activeServicesList');
-
-                    // Uncheck all radio buttons first
-                    document.querySelectorAll('input[name="new_service_id"]').forEach(rb => {
-                        rb.checked = false;
+                    document.querySelectorAll('input[name="services[]"]').forEach(cb => {
+                        cb.checked = data.current_services?.includes(parseInt(cb.value)) || false;
                     });
-
-                    // If there's a pending service, show it with radio buttons
-                    if (data.pending_service) {
-                        pendingServicesDiv.style.display = 'block';
-                        document.getElementById('client_service_id').value = data.pending_service.client_service_id;
-                        
-                        // Pre-select the current pending service
-                        const radio = document.querySelector(`input[name="new_service_id"][value="${data.pending_service.service_id}"]`);
-                        if (radio) radio.checked = true;
-                    } else {
-                        pendingServicesDiv.style.display = 'none';
-                    }
-
-                    // Show active services (read-only)
-                    if (data.active_services && data.active_services.length > 0) {
-                        activeServicesDiv.style.display = 'block';
-                        activeServicesList.innerHTML = data.active_services.map(s => 
-                            `<div style="padding: 8px; margin: 4px 0; background: white; border-radius: 4px; border-left: 3px solid #007bff;">
-                                <strong>${s.service_name}</strong> 
-                                <span style="color: #666; font-size: 12px;">(${s.status.replace('_', ' ')})</span>
-                            </div>`
-                        ).join('');
-                    } else {
-                        activeServicesDiv.style.display = 'none';
-                        activeServicesList.innerHTML = '';
-                    }
                 }
             } catch (err) {
                 Toast.fire({ icon: 'error', title: 'Failed to load client data' });
@@ -869,7 +534,6 @@ foreach ($clients as $client) {
         // ========== SAVE CLIENT ==========
         async function saveClient() {
             const form = document.getElementById('clientForm');
-            const isEdit = document.getElementById('client_id').value > 0;
 
             let valid = true;
             ['first_name', 'last_name', 'email'].forEach(id => {
@@ -882,18 +546,16 @@ foreach ($clients as $client) {
                 }
             });
 
-            // Validation for Add: must select a service
-            if (!isEdit) {
-                const serviceRadio = document.querySelector('input[name="service_id"]:checked');
-                if (!serviceRadio) {
-                    Toast.fire({ icon: 'warning', title: 'Please select a service' });
-                    valid = false;
-                }
+            const services = document.querySelectorAll('input[name="services[]"]:checked');
+            if (services.length === 0) {
+                Toast.fire({ icon: 'warning', title: 'Please select at least one service' });
+                valid = false;
             }
 
             if (!valid) return;
 
             const formData = new FormData(form);
+            const isEdit = document.getElementById('client_id').value > 0;
             formData.append('action', isEdit ? 'edit_client' : 'add_client');
 
             try {
@@ -1036,21 +698,12 @@ foreach ($clients as $client) {
                 });
             });
 
-            // Main client search bar
+            // Search bar
             document.getElementById('clientSearch').addEventListener('input', function() {
                 const term = this.value.toLowerCase().trim();
                 document.querySelectorAll('.cm-client-table tbody tr').forEach(row => {
                     const text = row.textContent.toLowerCase();
                     row.style.display = text.includes(term) ? '' : 'none';
-                });
-            });
-
-            // Existing client search in modal
-            document.getElementById('existingClientSearch').addEventListener('input', function() {
-                const term = this.value.toLowerCase().trim();
-                document.querySelectorAll('.cm-client-selection-item').forEach(item => {
-                    const searchText = item.getAttribute('data-client-search');
-                    item.style.display = searchText.includes(term) ? '' : 'none';
                 });
             });
         });
