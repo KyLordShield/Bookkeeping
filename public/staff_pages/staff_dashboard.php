@@ -31,16 +31,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $requirement_id = $_POST['requirement_id'] ?? 0;
         $new_status = $_POST['status'] ?? '';
         
+        // Allowed statuses for staff
+        $allowed_statuses = ['in_progress', 'pending', 'completed'];
+        if (!in_array($new_status, $allowed_statuses)) {
+            echo json_encode(['success' => false, 'message' => 'Invalid status for staff']);
+            exit;
+        }
+        
         try {
+            if ($new_status === 'completed') {
+                // Check if current status is 'approved'
+                $stmt = $db->prepare("SELECT status FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+                $stmt->execute([$requirement_id, $staff_id]);
+                $current_status = $stmt->fetchColumn();
+                
+                if ($current_status !== 'approved') {
+                    echo json_encode(['success' => false, 'message' => 'Can only set to completed after admin approval']);
+                    exit;
+                }
+            }
+            
             $stmt = $db->prepare("
                 UPDATE client_service_requirements 
-                SET status = ?, updated_at = NOW() 
+                SET status = ? 
                 WHERE requirement_id = ? AND assigned_staff_id = ?
             ");
-            $success = $stmt->execute([$new_status, $requirement_id, $staff_id]);
+            $stmt->execute([$new_status, $requirement_id, $staff_id]);
+            $updated = $stmt->rowCount() > 0;
             
             // Update overall client_service status if all requirements are completed
-            if ($success) {
+            if ($updated && $new_status === 'completed') {
                 $stmt = $db->prepare("
                     SELECT client_service_id FROM client_service_requirements 
                     WHERE requirement_id = ?
@@ -70,9 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-            echo json_encode(['success' => $success, 'message' => 'Status updated successfully']);
+            echo json_encode(['success' => $updated, 'message' => $updated ? 'Status updated successfully' : 'No update (wrong ID or not assigned to you)']);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => 'Failed to update status']);
+            echo json_encode(['success' => false, 'message' => 'Failed to update status: ' . $e->getMessage()]);
         }
         exit;
     }
@@ -84,12 +104,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         try {
             $stmt = $db->prepare("
                 UPDATE client_service_requirements 
-                SET progress_data = ?, updated_at = NOW() 
+                SET progress_data = ? 
                 WHERE requirement_id = ? AND assigned_staff_id = ?
             ");
-            $success = $stmt->execute([$progress_data, $requirement_id, $staff_id]);
+            $stmt->execute([$progress_data, $requirement_id, $staff_id]);
+            $updated = $stmt->rowCount() > 0;
             
-            echo json_encode(['success' => $success]);
+            echo json_encode(['success' => $updated, 'message' => $updated ? 'Checklist updated' : 'No update (wrong ID or not assigned to you)']);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
@@ -103,15 +124,6 @@ $filter = $_GET['filter'] ?? 'all';
 // Build query based on filter - ONLY show tasks assigned to THIS staff member
 $whereClause = "WHERE csr.assigned_staff_id = ?";
 $params = [$staff_id];
-
-// Don't add additional filters for now to keep it simple
-// if ($filter === 'in_progress') {
-//     $whereClause .= " AND csr.status = 'in_progress'";
-// } elseif ($filter === 'pending_approval') {
-//     $whereClause .= " AND csr.status = 'pending_approval'";
-// } elseif ($filter === 'urgent') {
-//     $whereClause .= " AND cs.deadline IS NOT NULL AND DATEDIFF(cs.deadline, NOW()) <= 3 AND csr.status != 'completed'";
-// }
 
 // Fetch tasks assigned to this staff member ONLY
 // GROUP BY client_service_id so we don't show duplicate rows
@@ -148,7 +160,7 @@ $stats_query = "
     SELECT 
         COUNT(DISTINCT cs.client_service_id) as total,
         COUNT(DISTINCT CASE WHEN cs.overall_status = 'in_progress' THEN cs.client_service_id END) as in_progress,
-        COUNT(DISTINCT CASE WHEN cs.overall_status = 'pending_approval' THEN cs.client_service_id END) as pending_approval,
+        COUNT(DISTINCT CASE WHEN cs.overall_status = 'pending' THEN cs.client_service_id END) as pending,
         COUNT(DISTINCT CASE WHEN cs.deadline IS NOT NULL AND DATEDIFF(cs.deadline, NOW()) <= 3 
               AND cs.overall_status != 'completed' THEN cs.client_service_id END) as urgent
     FROM client_service_requirements csr
@@ -390,9 +402,9 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             color: #856404;
         }
 
-        .status-pending_approval {
-            background: #d1ecf1;
-            color: #0c5460;
+        .status-approved {
+            background: #cce5ff;
+            color: #004085;
         }
 
         .status-completed {
@@ -451,7 +463,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                     <p>In Progress</p>
                 </div>
                 <div class="stat-card">
-                    <h3><?= $stats['pending_approval'] ?></h3>
+                    <h3><?= $stats['pending'] ?></h3>
                     <p>Waiting for Approval</p>
                 </div>
                 <div class="stat-card">
@@ -464,7 +476,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                 <span class="filter-label">Filtered by Status:</span>
                 <button class="filter-btn <?= $filter === 'all' ? 'active' : '' ?>" onclick="filterTasks('all')">All</button>
                 <button class="filter-btn <?= $filter === 'in_progress' ? 'active' : '' ?>" onclick="filterTasks('in_progress')">In Progress</button>
-                <button class="filter-btn <?= $filter === 'pending_approval' ? 'active' : '' ?>" onclick="filterTasks('pending_approval')">Waiting for Approval</button>
+                <button class="filter-btn <?= $filter === 'pending' ? 'active' : '' ?>" onclick="filterTasks('pending')">Waiting for Approval</button>
                 <button class="filter-btn <?= $filter === 'urgent' ? 'active' : '' ?>" onclick="filterTasks('urgent')">Urgent</button>
             </div>
 
@@ -512,7 +524,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                             <td><?= $task['service_created_at'] ? date('M d, Y', strtotime($task['service_created_at'])) : ($task['start_date'] ? date('M d, Y', strtotime($task['start_date'])) : '—') ?></td>
                             <td><?= $task['deadline'] ? date('M d, Y', strtotime($task['deadline'])) : 'Not set' ?></td>
                             <td>
-                                <button class="action-btn" onclick='console.log("Clicked!", <?= json_encode($task) ?>); openTaskModal(<?= json_encode($task) ?>);'>Open</button>
+                                <button class="action-btn" onclick='openTaskModal(<?= json_encode($task) ?>);'>Open</button>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -562,26 +574,16 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             <div class="checklist-section">
                 <h3>Task Requirements</h3>
                 <div id="checklistContainer"></div>
-                <p class="warning-text">! Please complete all requirements before taking action</p>
-            </div>
-
-            <div class="action-buttons">
-                <button class="modal-action-btn btn-update" onclick="updateStatus('in_progress')">START / UPDATE</button>
-                <button class="modal-action-btn btn-submit" onclick="updateStatus('pending_approval')">SUBMIT FOR APPROVAL</button>
-                <button class="modal-action-btn btn-admin" onclick="updateStatus('needs_review')">NEEDS ADMIN REVIEW</button>
             </div>
         </div>
     </div>
 
     <script>
-        let currentRequirementId = null;
+        const currentStaffId = <?= json_encode($staff_id) ?>;
         let currentTask = null;
 
         function filterTasks(filter) {
-            // Show loading
             document.getElementById('loadingOverlay').classList.add('show');
-            
-            // Navigate to filtered page
             window.location.href = '?filter=' + filter;
         }
 
@@ -593,7 +595,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             document.getElementById('clientContact').value = task.email + (task.phone ? ' • ' + task.phone : '');
             document.getElementById('taskDeadline').value = task.deadline ? new Date(task.deadline).toLocaleDateString() : 'Not set';
 
-            // Build timeline based on overall service status
             const timeline = document.getElementById('timelineContainer');
             let timelineHTML = `
                 <div class="timeline-item">
@@ -605,7 +606,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                 </div>
             `;
 
-            if (task.service_status === 'in_progress' || task.service_status === 'pending_approval' || task.service_status === 'completed') {
+            if (task.service_status === 'in_progress' || task.service_status === 'pending' || task.service_status === 'completed') {
                 timelineHTML += `
                     <div class="timeline-item">
                         <div class="timeline-dot yellow">⏳</div>
@@ -631,7 +632,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
             timeline.innerHTML = timelineHTML;
 
-            // Fetch ALL requirements for this client_service_id
             fetchAllRequirements(task.client_service_id);
 
             document.getElementById('taskModal').classList.add('show');
@@ -641,14 +641,9 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             const checklist = document.getElementById('checklistContainer');
             checklist.innerHTML = '<p style="text-align: center; padding: 20px;">Loading all steps...</p>';
 
-            // Adjust the path based on where you saved the file
-            fetch(`../staff_pages/get_all_requirements.php?client_service_id=${client_service_id}`)
-                .then(response => {
-                    console.log('Response status:', response.status);
-                    return response.json();
-                })
+            fetch(`get_all_requirements.php?client_service_id=${client_service_id}`)
+                .then(response => response.json())
                 .then(data => {
-                    console.log('Data received:', data);
                     if (data.success && data.requirements) {
                         buildRequirementsList(data.requirements);
                     } else {
@@ -666,7 +661,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             let html = '';
 
             requirements.forEach(req => {
-                const isYourTask = req.requirement_id == currentRequirementId;
+                const isYourTask = req.assigned_staff_id == currentStaffId;
                 const statusClass = req.status || 'pending';
                 const statusText = (req.status || 'pending').replace(/_/g, ' ').toUpperCase();
                 
@@ -677,16 +672,17 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                     savedProgress = {};
                 }
 
-                const items = [
-                    'Bank statement',
-                    'Receipts organized', 
-                    'Data Entry',
-                    'Reconciliation Done',
-                    'Report prepared'
-                ];
+                let items = [];
+                try {
+                    items = req.checklist_items ? JSON.parse(req.checklist_items) : [];
+                } catch(e) {
+                    items = [];
+                }
+
+                const isSubmitted = items.length === 0 || items.every(item => savedProgress[item]);
 
                 html += `
-                    <div class="requirement-block" style="
+                    <div class="requirement-block" data-req-id="${req.requirement_id}" style="
                         background: ${isYourTask ? '#fffbea' : 'white'};
                         border: 2px solid ${isYourTask ? '#f59e0b' : '#ddd'};
                         border-radius: 8px;
@@ -703,41 +699,66 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                             </span>
                         </div>
                         
-                        ${isYourTask ? `
-                            <div style="margin-top: 10px;">
-                                ${items.map((item, idx) => {
-                                    const checked = savedProgress[item] ? 'checked' : '';
-                                    return `
-                                        <div class="checklist-item">
-                                            <input type="checkbox" id="check${idx}" ${checked} 
-                                                   onchange="updateChecklist('${item}', this.checked)">
-                                            <label for="check${idx}">${item}</label>
-                                            <button class="file-upload-btn">📎</button>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        ` : `
+                        ${!isYourTask ? `
                             <p style="color: #666; font-size: 14px; margin: 10px 0 0 0;">
                                 Assigned to: ${req.assigned_staff_name || 'Another staff member'}
                             </p>
+                        ` : `
+                            <div style="margin-top: 10px;">
+                                ${items.length > 0 ? items.map((item, idx) => {
+                                    const checked = savedProgress[item] ? 'checked' : '';
+                                    const disabled = req.status !== 'in_progress' ? 'disabled' : '';
+                                    return `
+                                        <div class="checklist-item">
+                                            <input type="checkbox" id="check${req.requirement_id}_${idx}" data-item="${item}" ${checked} ${disabled}
+                                                   onchange="updateChecklist(this, ${req.requirement_id})">
+                                            <label for="check${req.requirement_id}_${idx}">${item}</label>
+                                            <button class="file-upload-btn">📎</button>
+                                        </div>
+                                    `;
+                                }).join('') : '<p>No sub-checklist items defined by admin.</p>'}
+                            </div>
+                            <div class="action-buttons">
+                                ${getButtonsForStatus(req.status, req.requirement_id, isSubmitted)}
+                            </div>
                         `}
                     </div>
                 `;
             });
 
             checklist.innerHTML = html;
+
+            requirements.forEach(req => {
+                if (req.assigned_staff_id == currentStaffId && req.status === 'in_progress') {
+                    checkIfAllChecked(req.requirement_id);
+                }
+            });
+        }
+
+        function getButtonsForStatus(status, reqId, isSubmitted) {
+            let buttons = '';
+            if (status === 'in_progress') {
+                buttons = `<button id="reqApprove${reqId}" class="modal-action-btn btn-submit" onclick="updateStatus('pending', ${reqId})" disabled>Submit for Approval</button>`;
+            } else if (status === 'approved') {
+                buttons = `<button class="modal-action-btn btn-update" onclick="updateStatus('completed', ${reqId})">Update Status (Notify Client)</button>`;
+            } else if (status === 'completed') {
+                buttons = `<p style="color: #7ED321; font-weight: bold;">Completed and Notified ✅</p>`;
+            } else if (status === 'pending' || !status) {
+                if (isSubmitted) {
+                    buttons = `<p class="warning-text">Waiting for Admin Approval</p>`;
+                } else {
+                    buttons = `<button class="modal-action-btn btn-update" onclick="updateStatus('in_progress', ${reqId})">Start Task</button>`;
+                }
+            }
+            return buttons;
         }
 
         function closeModal() {
             document.getElementById('taskModal').classList.remove('show');
-            currentRequirementId = null;
             currentTask = null;
         }
 
-        function updateStatus(status) {
-            if (!currentRequirementId) return;
-
+        function updateStatus(status, reqId) {
             Swal.fire({
                 title: 'Update Status?',
                 text: 'Are you sure you want to update the status to: ' + status.replace(/_/g, ' ').toUpperCase() + '?',
@@ -748,7 +769,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                 confirmButtonText: 'Yes, update it!'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Show loading
                     Swal.fire({
                         title: 'Updating...',
                         allowOutsideClick: false,
@@ -759,7 +779,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
                     const formData = new FormData();
                     formData.append('action', 'update_status');
-                    formData.append('requirement_id', currentRequirementId);
+                    formData.append('requirement_id', reqId);
                     formData.append('status', status);
 
                     fetch(window.location.href, {
@@ -798,23 +818,21 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             });
         }
 
-        function updateChecklist(item, checked) {
-            if (!currentRequirementId) return;
+        function updateChecklist(checkbox, reqId) {
+            const block = document.querySelector(`.requirement-block[data-req-id="${reqId}"]`);
+            if (!block) return;
 
-            // Get current progress
+            const checks = block.querySelectorAll('input[type="checkbox"]');
             let progress = {};
-            try {
-                progress = currentTask.progress_data ? JSON.parse(currentTask.progress_data) : {};
-            } catch(e) {
-                progress = {};
-            }
 
-            // Update the item
-            progress[item] = checked;
+            checks.forEach(c => {
+                const it = c.getAttribute('data-item');
+                progress[it] = c.checked;
+            });
 
             const formData = new FormData();
             formData.append('action', 'update_checklist');
-            formData.append('requirement_id', currentRequirementId);
+            formData.append('requirement_id', reqId);
             formData.append('progress_data', JSON.stringify(progress));
 
             fetch(window.location.href, {
@@ -824,10 +842,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Update local state
-                    currentTask.progress_data = JSON.stringify(progress);
-                    
-                    // Show toast notification
                     const Toast = Swal.mixin({
                         toast: true,
                         position: 'top-end',
@@ -838,8 +852,10 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
                     Toast.fire({
                         icon: 'success',
-                        title: checked ? 'Item checked!' : 'Item unchecked!'
+                        title: checkbox.checked ? 'Item checked!' : 'Item unchecked!'
                     });
+
+                    checkIfAllChecked(reqId);
                 } else {
                     Swal.fire({
                         icon: 'error',
@@ -856,6 +872,18 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             });
         }
 
+        function checkIfAllChecked(reqId) {
+            const block = document.querySelector(`.requirement-block[data-req-id="${reqId}"]`);
+            if (!block) return;
+
+            const checks = block.querySelectorAll('input[type="checkbox"]');
+            const allChecked = checks.length === 0 || Array.from(checks).every(c => c.checked);
+            const btn = block.querySelector(`#reqApprove${reqId}`);
+            if (btn) {
+                btn.disabled = !allChecked;
+            }
+        }
+
         window.onclick = function(e) {
             const modal = document.getElementById('taskModal');
             if (e.target === modal) {
@@ -863,7 +891,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             }
         }
 
-        // Check if page just loaded from filter
         window.addEventListener('load', function() {
             setTimeout(() => {
                 document.getElementById('loadingOverlay').classList.remove('show');

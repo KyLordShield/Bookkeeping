@@ -17,6 +17,8 @@ class Database
         // TODO: Change these to match your setup!
         $host     = 'localhost';                    // Usually 'localhost'
         $dbname   = 'client_service_management'; //'client_service_management';    // Your database name
+        //$dbname   = 'bookkeeping';        // Your database name
+          
         $username = 'root';                         // Default XAMPP/WAMP username
         $password = '';                             // Default is empty for local dev
         $charset  = 'utf8mb4';                      // Best for full character support
