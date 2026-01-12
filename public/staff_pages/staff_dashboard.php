@@ -340,6 +340,22 @@ try {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <style>
+        /* Note Modal Styles */
+.note-modal { display: none; position: fixed; z-index: 1001; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); overflow-y: auto; }
+.note-modal.show { display: block; }
+.note-modal-content { background-color: #fff; margin: 3% auto; padding: 35px; width: 90%; max-width: 600px; border-radius: 12px; position: relative; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+.note-modal-title { font-size: 20px; font-weight: bold; margin-bottom: 25px; color: #202124; }
+.note-form-group { margin-bottom: 20px; }
+.note-form-label { display: block; margin-bottom: 8px; font-weight: 600; color: #5f6368; font-size: 14px; }
+.note-form-input, .note-form-textarea, .note-form-select { width: 100%; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; transition: border-color 0.2s; }
+.note-form-input:focus, .note-form-textarea:focus, .note-form-select:focus { outline: none; border-color: #1a73e8; }
+.note-form-textarea { resize: vertical; min-height: 120px; font-family: inherit; }
+.note-modal-buttons { display: flex; gap: 12px; margin-top: 30px; }
+.note-btn { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; transition: all 0.2s; }
+.note-btn-save { background: #1a73e8; color: white; }
+.note-btn-save:hover { background: #1557b0; }
+.note-btn-cancel { background: #f1f3f4; color: #5f6368; }
+.note-btn-cancel:hover { background: #e8eaed; }
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow-y: auto; }
         .modal.show { display: block; }
         .modal-content { background-color: #fff; margin: 2% auto; padding: 30px; width: 90%; max-width: 900px; border-radius: 8px; position: relative; }
@@ -497,7 +513,7 @@ try {
             <div id="requirementsContainer"></div>
         </div>
     </div>
-
+                            
     <script>
         const currentStaffId = <?= json_encode($staff_id) ?>;
         let currentTask = null;
@@ -613,9 +629,10 @@ try {
                                 SUBMIT FOR APPROVAL
                             </button>
                             <button class="modal-action-btn btn-admin" 
-                                    ${req.status === 'pending' ? '' : 'disabled'}>
-                                NEEDS ADMIN ACTION
-                            </button>
+        onclick="openAdminNoteModal(${req.requirement_id}, '${escapeHtml(req.requirement_name)}')"
+        ${req.status === 'pending' ? '' : 'disabled'}>
+    NEEDS ADMIN ACTION
+</button>
                         </div>
                     </div>
                 `;
@@ -935,6 +952,125 @@ try {
         window.addEventListener('load', () => {
             setTimeout(() => document.getElementById('loadingOverlay').classList.remove('show'), 300);
         });
+
+        function openAdminNoteModal(reqId, reqName) {
+    // Get client info from currentTask
+    const clientName = currentTask ? `${currentTask.first_name} ${currentTask.last_name}` : 'Client';
+    
+    document.getElementById('noteRequirementId').value = reqId;
+    document.getElementById('noteClientId').value = currentTask?.client_id || '';
+    document.getElementById('noteTitle').value = `Action Required: ${reqName} - ${clientName}`;
+    document.getElementById('noteContent').value = '';
+    document.getElementById('noteType').value = 'client_note';
+    document.getElementById('notePriority').value = 'important';
+    document.getElementById('noteDueDate').value = '';
+    document.getElementById('adminNoteModal').classList.add('show');
+}
+
+function closeNoteModal() {
+    document.getElementById('adminNoteModal').classList.remove('show');
+    document.getElementById('adminNoteForm').reset();
+}
+
+function submitAdminNote(event) {
+    event.preventDefault();
+    
+    const formData = new FormData();
+    formData.append('action', 'create_admin_note');
+    formData.append('title', document.getElementById('noteTitle').value);
+    formData.append('content', document.getElementById('noteContent').value);
+    formData.append('note_type', document.getElementById('noteType').value);
+    formData.append('priority', document.getElementById('notePriority').value);
+    formData.append('related_client_id', document.getElementById('noteClientId').value);
+    formData.append('due_date', document.getElementById('noteDueDate').value);
+    formData.append('requirement_id', document.getElementById('noteRequirementId').value);
+    
+    Swal.fire({
+        title: 'Sending...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+    
+    fetch('submit_admin_note.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        Swal.close();
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Sent!',
+                text: 'Admin has been notified',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            closeNoteModal();
+        } else {
+            Swal.fire('Error', data.message || 'Failed to send note', 'error');
+        }
+    })
+    .catch(e => {
+        Swal.close();
+        Swal.fire('Error', 'Failed to send: ' + e.message, 'error');
+    });
+}
     </script>
+    <!-- Admin Note Modal -->
+<div id="adminNoteModal" class="note-modal">
+    <div class="note-modal-content">
+        <span class="close-btn" onclick="closeNoteModal()">&times;</span>
+        
+        <div class="note-modal-title">REQUEST ADMIN ACTION</div>
+        
+        <form id="adminNoteForm" onsubmit="submitAdminNote(event)">
+            <input type="hidden" id="noteRequirementId" name="requirement_id">
+            <input type="hidden" id="noteClientId" name="related_client_id">
+            
+            <div class="note-form-group">
+                <label class="note-form-label">Title *</label>
+                <input type="text" id="noteTitle" class="note-form-input" required>
+            </div>
+            
+            <div class="note-form-group">
+                <label class="note-form-label">Content *</label>
+                <textarea id="noteContent" class="note-form-textarea" required 
+                          placeholder="Describe what admin action is needed..."></textarea>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="note-form-group">
+                    <label class="note-form-label">Type</label>
+                    <select id="noteType" class="note-form-select">
+                        <option value="general">General</option>
+                        <option value="reminder">Reminder</option>
+                        <option value="compliance">Compliance</option>
+                        <option value="client_note" selected>Client-Specific</option>
+                    </select>
+                </div>
+                
+                <div class="note-form-group">
+                    <label class="note-form-label">Priority</label>
+                    <select id="notePriority" class="note-form-select">
+                        <option value="normal">Normal</option>
+                        <option value="important" selected>Important</option>
+                        <option value="urgent">Urgent</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="note-form-group">
+                <label class="note-form-label">Due Date (optional)</label>
+                <input type="date" id="noteDueDate" class="note-form-input">
+            </div>
+            
+            <div class="note-modal-buttons">
+                <button type="submit" class="note-btn note-btn-save">Save Note</button>
+                <button type="button" class="note-btn note-btn-cancel" onclick="closeNoteModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>
