@@ -19,6 +19,7 @@
             flex: 1;
             background: #7D1C19;
             padding: 25px;
+            margin-left: 160px;   /* SAME AS SIDEBAR WIDTH */
         }
 
         .header {

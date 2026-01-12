@@ -15,6 +15,10 @@
        class="nav-button <?php echo ($current_page === 'staff_updates.php') ? 'active' : ''; ?>">
         Update
     </a>
-
+    <form method="POST" action="../logout.php" class="logout-form">
+        <button type="submit" class="nav-button logout-btn">
+            Logout
+        </button>
+    </form>
     
 </div>

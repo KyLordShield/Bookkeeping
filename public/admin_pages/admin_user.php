@@ -201,7 +201,7 @@ if ($viewType === 'client') {
         .main-content {
             flex: 1;
             padding: 20px;
-            margin-left: 0;
+            margin-left: 160px;   /* SAME AS SIDEBAR WIDTH */
             overflow-x: hidden;
         }
 

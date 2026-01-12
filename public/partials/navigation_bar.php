@@ -21,7 +21,11 @@
         Services
     </a>
 
-
+    <form method="POST" action="../logout.php" class="logout-form">
+        <button type="submit" class="nav-button logout-btn">
+            Logout
+        </button>
+    </form>
     <!-- Add more items easily -->
     <!-- <a href="client_settings.php" class="nav-button <?php echo ($current_page === 'client_settings.php') ? 'active' : ''; ?>">Settings</a> -->
 </div>

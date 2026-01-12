@@ -14,7 +14,7 @@ body {
 .container {
     display: flex;
     min-height: 100vh;
-    border: 8px solid #4a9fd8; /* Optional: keep your signature blue border */
+    border: 8px solid #ececec; /* Optional: keep your signature blue border */
 }
 
 .main-content {
@@ -22,6 +22,7 @@ body {
     background-color: #7D1C19;        /* Maroon background for the main area */
     padding: 40px;                    /* Spacious padding */
     color: white;
+    margin-left: 160px;   /* SAME AS SIDEBAR WIDTH */
 }
 
 /* ===== PAGE CONTENT STYLES (unchanged, just moved under .main-content context) ===== */
