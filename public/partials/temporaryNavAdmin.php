@@ -34,5 +34,9 @@
     <a href="admin_note.php"
        class="nav-button <?php echo ($current_page === 'admin_note.php') ? 'active' : ''; ?>">
         Notes
+
+        <a href="admin_user.php"
+       class="nav-button <?php echo ($current_page === 'admin_user.php') ? 'active' : ''; ?>">
+        Users Account
     </a>
 </div>
