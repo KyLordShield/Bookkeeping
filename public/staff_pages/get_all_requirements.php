@@ -1,4 +1,7 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1); // Temporarily enable to see errors in browser/console
+ob_start(); // Buffer output to prevent premature sending
 session_start();
 require_once __DIR__ . '/../../config/Database.php';
 
@@ -38,6 +41,28 @@ try {
     $stmt->execute();
     $requirements = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
+    // Fetch documents for each requirement
+    foreach ($requirements as &$req) {
+        $doc_query = "
+            SELECT 
+                document_id,
+                document_name AS filename,
+                cloud_storage_id AS public_id,
+                document_url AS url,
+                file_size_kb * 1024 AS size,
+                upload_date AS uploaded_at
+            FROM documents 
+            WHERE related_to_type = 'requirement' 
+            AND related_to_id = :req_id
+            ORDER BY upload_date DESC
+        ";
+        
+        $doc_stmt = $db->prepare($doc_query);
+        $doc_stmt->bindParam(':req_id', $req['requirement_id'], PDO::PARAM_INT);
+        $doc_stmt->execute();
+        $req['documents'] = $doc_stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
     echo json_encode([
         'success' => true,
         'requirements' => $requirements,
@@ -50,5 +75,6 @@ try {
         'error' => $e->getMessage()
     ]);
 }
+ob_end_flush();
 exit;
 ?>

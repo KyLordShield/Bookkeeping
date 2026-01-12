@@ -27,50 +27,35 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-// Google Drive Configuration
-define('GOOGLE_DRIVE_FOLDER_ID', '1-h_uI0Yn3HZY5aEiLSTlFGs9aOqsYQO2'); // You'll need to create a folder and put its ID here
-define('GOOGLE_CREDENTIALS_PATH', __DIR__ . '/../../config/google-credentials.json');
+// Cloudinary Configuration
+define('CLOUDINARY_CLOUD_NAME', 'dyr0rok0l'); // Your Cloudinary cloud name
+define('CLOUDINARY_API_KEY', '564255156769188'); // Your API key
+define('CLOUDINARY_API_SECRET', '0TqAR76L8fEgKOuvDI4mbpVtw5c'); // Your API secret
 
-// Function to upload file to Google Drive
-function uploadToGoogleDrive($file, $filename) {
-    // Check if credentials file exists
-    if (!file_exists(GOOGLE_CREDENTIALS_PATH)) {
-        throw new Exception('Google credentials file not found');
+// Function to upload file to Cloudinary
+function uploadToCloudinary($file, $filename) {
+    $cloud_name = CLOUDINARY_CLOUD_NAME;
+    $api_key = CLOUDINARY_API_KEY;
+    $api_secret = CLOUDINARY_API_SECRET;
+    
+    if (empty($api_secret)) {
+        throw new Exception('Cloudinary credentials not set');
     }
     
-    $credentials = json_decode(file_get_contents(GOOGLE_CREDENTIALS_PATH), true);
+    $timestamp = time();
+    $signature = sha1("timestamp=$timestamp" . $api_secret);
     
-    // Get access token
-    $token = getGoogleAccessToken($credentials);
+    $url = "https://api.cloudinary.com/v1_1/$cloud_name/auto/upload";
     
-    // Prepare file metadata
-    $metadata = [
-        'name' => $filename,
-        'parents' => [GOOGLE_DRIVE_FOLDER_ID]
-    ];
-    
-    // Create multipart upload
-    $boundary = uniqid();
-    $delimiter = "\r\n--" . $boundary . "\r\n";
-    $closeDelimiter = "\r\n--" . $boundary . "--";
-    
-    $multipartBody = $delimiter;
-    $multipartBody .= 'Content-Type: application/json; charset=UTF-8' . "\r\n\r\n";
-    $multipartBody .= json_encode($metadata) . $delimiter;
-    $multipartBody .= 'Content-Type: ' . $file['type'] . "\r\n";
-    $multipartBody .= 'Content-Transfer-Encoding: base64' . "\r\n\r\n";
-    $multipartBody .= base64_encode(file_get_contents($file['tmp_name'])) . $closeDelimiter;
-    
-    // Upload to Google Drive - ADDED supportsAllDrives=true
-    $ch = curl_init('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true');
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $multipartBody,
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $token,
-            'Content-Type: multipart/related; boundary=' . $boundary,
-            'Content-Length: ' . strlen($multipartBody)
+        CURLOPT_POSTFIELDS => [
+            'file' => new \CURLFile($file['tmp_name'], $file['type'], $filename),
+            'api_key' => $api_key,
+            'timestamp' => $timestamp,
+            'signature' => $signature
         ]
     ]);
     
@@ -79,39 +64,15 @@ function uploadToGoogleDrive($file, $filename) {
     curl_close($ch);
     
     if ($httpCode !== 200) {
-        throw new Exception('Failed to upload to Google Drive: ' . $response);
+        throw new Exception('Failed to upload to Cloudinary: ' . $response);
     }
     
     $result = json_decode($response, true);
     
-    // Make file publicly accessible
-    makeFilePublic($result['id'], $token);
-    
     return [
-        'id' => $result['id'],
-        'webViewLink' => "https://drive.google.com/file/d/{$result['id']}/view",
-        'webContentLink' => "https://drive.google.com/uc?id={$result['id']}&export=download"
+        'public_id' => $result['public_id'],
+        'url' => $result['secure_url']
     ];
-}
-
-function makeFilePublic($fileId, $token) {
-    // ADDED supportsAllDrives=true
-    $ch = curl_init("https://www.googleapis.com/drive/v3/files/{$fileId}/permissions?supportsAllDrives=true");
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode([
-            'role' => 'reader',
-            'type' => 'anyone'
-        ]),
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $token,
-            'Content-Type: application/json'
-        ]
-    ]);
-    
-    curl_exec($ch);
-    curl_close($ch);
 }
 
 // Handle file upload
@@ -145,43 +106,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['requirement_file']))
     }
     
     try {
-        // Upload to Google Drive
+        // Upload to Cloudinary
         $filename = 'req_' . $requirement_id . '_' . time() . '_' . $file['name'];
-        $driveFile = uploadToGoogleDrive($file, $filename);
+        $cloudinaryFile = uploadToCloudinary($file, $filename);
         
-        // Get existing files
-        $stmt = $db->prepare("SELECT uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
-        $stmt->execute([$requirement_id, $staff_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Insert into documents table (assuming you added cloud_storage_id column)
+        $stmt = $db->prepare("
+            INSERT INTO documents 
+            (uploaded_by, related_to_type, related_to_id, document_name, document_url, cloud_storage_provider, cloud_storage_id, file_type, file_size_kb) 
+            VALUES (?, 'requirement', ?, ?, ?, 'Cloudinary', ?, ?, ?)
+        ");
+        $stmt->execute([
+            $user_id,
+            $requirement_id,
+            $file['name'],
+            $cloudinaryFile['url'],
+            $cloudinaryFile['public_id'],
+            $file['type'],
+            (int)($file['size'] / 1024) // Convert to KB
+        ]);
         
-        $files = [];
-        if ($result && !empty($result['uploaded_file'])) {
-            $files = json_decode($result['uploaded_file'], true) ?: [];
-        }
-        
-        // Add new file
-        $files[] = [
-            'filename' => $file['name'],
-            'drive_id' => $driveFile['id'],
-            'view_link' => $driveFile['webViewLink'],
-            'download_link' => $driveFile['webContentLink'],
-            'size' => $file['size'],
-            'uploaded_at' => date('Y-m-d H:i:s')
-        ];
-        
-        
-        // Update database
-        $stmt = $db->prepare("UPDATE client_service_requirements SET uploaded_file = ? WHERE requirement_id = ? AND assigned_staff_id = ?");
-        $stmt->execute([json_encode($files), $requirement_id, $staff_id]);
+        // Get the new document ID for response (optional, but useful)
+        $document_id = $db->lastInsertId();
         
         echo json_encode([
             'success' => true, 
-            'message' => 'File uploaded to Google Drive successfully', 
+            'message' => 'File uploaded to Cloudinary successfully', 
             'file' => [
+                'document_id' => $document_id,
                 'filename' => $file['name'],
-                'drive_id' => $driveFile['id'],
-                'view_link' => $driveFile['webViewLink'],
-                'download_link' => $driveFile['webContentLink'],
+                'public_id' => $cloudinaryFile['public_id'],
+                'url' => $cloudinaryFile['url'],
                 'size' => $file['size'],
                 'uploaded_at' => date('Y-m-d H:i:s')
             ]
@@ -197,58 +152,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     header('Content-Type: application/json');
     
     $requirement_id = filter_var($_POST['requirement_id'] ?? 0, FILTER_VALIDATE_INT);
-    $drive_id = $_POST['drive_id'] ?? '';
+    $public_id = $_POST['public_id'] ?? '';
     
-    if (!$requirement_id || !$drive_id) {
+    if (!$requirement_id || !$public_id) {
         echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
         exit;
     }
     
     try {
-        // Get existing files
-        $stmt = $db->prepare("SELECT uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+        // Verify the requirement is assigned to this staff (for security)
+        $stmt = $db->prepare("SELECT 1 FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
         $stmt->execute([$requirement_id, $staff_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($result && !empty($result['uploaded_file'])) {
-            $files = json_decode($result['uploaded_file'], true) ?: [];
-            
-            // Remove file from array
-            $files = array_filter($files, function($f) use ($drive_id) {
-                return $f['drive_id'] !== $drive_id;
-            });
-            $files = array_values($files);
-            
-            // Update database
-            $stmt = $db->prepare("UPDATE client_service_requirements SET uploaded_file = ? WHERE requirement_id = ? AND assigned_staff_id = ?");
-            $stmt->execute([json_encode($files), $requirement_id, $staff_id]);
-            
-            // Delete from Google Drive
-            $credentials = json_decode(file_get_contents(GOOGLE_CREDENTIALS_PATH), true);
-            $token = getGoogleAccessToken($credentials);
-            
-           $ch = curl_init("https://www.googleapis.com/drive/v3/files/{$drive_id}?supportsAllDrives=true");
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_CUSTOMREQUEST => 'DELETE',
-                CURLOPT_HTTPHEADER => [
-                    'Authorization: Bearer ' . $token
-                ]
-            ]);
-            curl_exec($ch);
-            curl_close($ch);
-            
-            echo json_encode(['success' => true, 'message' => 'File deleted']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'No files found']);
+        if (!$stmt->fetch()) {
+            echo json_encode(['success' => false, 'message' => 'Not authorized']);
+            exit;
         }
+        
+        // Delete from documents table
+        $stmt = $db->prepare("DELETE FROM documents WHERE related_to_type = 'requirement' AND related_to_id = ? AND cloud_storage_id = ?");
+        $stmt->execute([$requirement_id, $public_id]);
+        
+        if ($stmt->rowCount() === 0) {
+            echo json_encode(['success' => false, 'message' => 'File not found in database']);
+            exit;
+        }
+        
+        // Delete from Cloudinary
+        $cloud_name = CLOUDINARY_CLOUD_NAME;
+        $api_key = CLOUDINARY_API_KEY;
+        $api_secret = CLOUDINARY_API_SECRET;
+        
+        $timestamp = time();
+        $signature = sha1("public_id=$public_id&timestamp=$timestamp" . $api_secret);
+        
+        $url = "https://api.cloudinary.com/v1_1/$cloud_name/destroy";
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => [
+                'public_id' => $public_id,
+                'api_key' => $api_key,
+                'timestamp' => $timestamp,
+                'signature' => $signature
+            ]
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
+        
+        echo json_encode(['success' => true, 'message' => 'File deleted']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
     }
     exit;
 }
 
-// Handle status updates
+// Handle status updates (no changes needed, but added check for files using documents table)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     
@@ -268,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         
         try {
-            $stmt = $db->prepare("SELECT status, uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+            $stmt = $db->prepare("SELECT status FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
             $stmt->execute([$requirement_id, $staff_id]);
             $current_req = $stmt->fetch(PDO::FETCH_ASSOC);
             
@@ -277,10 +237,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 exit;
             }
             
-            // Validation: must upload file before submitting for approval
-            if ($new_status === 'pending' && empty($current_req['uploaded_file'])) {
-                echo json_encode(['success' => false, 'message' => 'Please upload at least one file before submitting']);
-                exit;
+            // Validation: must have at least one file before submitting for approval (query documents table)
+            if ($new_status === 'pending') {
+                $stmt = $db->prepare("SELECT COUNT(*) FROM documents WHERE related_to_type = 'requirement' AND related_to_id = ?");
+                $stmt->execute([$requirement_id]);
+                if ($stmt->fetchColumn() === 0) {
+                    echo json_encode(['success' => false, 'message' => 'Please upload at least one file before submitting']);
+                    exit;
+                }
             }
             
             if ($new_status === 'completed' && $current_req['status'] !== 'approved') {
@@ -338,8 +302,7 @@ try {
         JOIN clients c ON cs.client_id = c.client_id
         JOIN services s ON cs.service_id = s.service_id
         WHERE csr.assigned_staff_id = ?
-        GROUP BY cs.client_service_id, c.first_name, c.last_name, c.email, c.phone, 
-                 s.service_name, cs.overall_status, cs.start_date, cs.deadline, cs.created_at
+        GROUP BY cs.client_service_id
         ORDER BY cs.deadline ASC, cs.created_at DESC
     ";
     
@@ -377,295 +340,56 @@ try {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <style>
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            overflow-y: auto;
-        }
-
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow-y: auto; }
         .modal.show { display: block; }
-
-        .modal-content {
-            background-color: #fff;
-            margin: 2% auto;
-            padding: 30px;
-            width: 90%;
-            max-width: 900px;
-            border-radius: 8px;
-            position: relative;
-        }
-
-        .close-btn {
-            position: absolute;
-            right: 20px;
-            top: 20px;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        .service-info {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin: 20px 0 30px 0;
-            padding: 15px;
-            background: #f5f5f5;
-            border-radius: 5px;
-        }
-
-        .service-info-item label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 5px;
-            font-size: 12px;
-            color: #666;
-        }
-
-        .service-info-item input {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background: white;
-        }
-
-        .requirement-block {
-            background: #fffbea;
-            border: 2px solid #f59e0b;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-        }
-
-        .requirement-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: bold;
-        }
-
+        .modal-content { background-color: #fff; margin: 2% auto; padding: 30px; width: 90%; max-width: 900px; border-radius: 8px; position: relative; }
+        .close-btn { position: absolute; right: 20px; top: 20px; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .service-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0 30px 0; padding: 15px; background: #f5f5f5; border-radius: 5px; }
+        .service-info-item label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 12px; color: #666; }
+        .service-info-item input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; }
+        .requirement-block { background: #fffbea; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .requirement-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .status-badge { padding: 6px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
         .status-pending { background: #f0f0f0; color: #666; }
         .status-in_progress { background: #fff3cd; color: #856404; }
         .status-approved { background: #cce5ff; color: #004085; }
         .status-completed { background: #d4edda; color: #155724; }
-
-        .upload-section {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border: 1px solid #e0e0e0;
-        }
-
-        .upload-section h4 {
-            margin: 0 0 15px 0;
-            font-size: 14px;
-            color: #5f6368;
-        }
-
-        .file-upload-area {
-            border: 2px dashed #dadce0;
-            border-radius: 8px;
-            padding: 40px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: #fafafa;
-        }
-
-        .file-upload-area:hover {
-            border-color: #1a73e8;
-            background: #f1f3f4;
-        }
-
-        .file-upload-area.dragover {
-            border-color: #1a73e8;
-            background: #e8f0fe;
-        }
-
-        .upload-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-            opacity: 0.7;
-        }
-
-        .upload-text {
-            color: #5f6368;
-            font-size: 14px;
-            margin: 5px 0;
-        }
-
-        .upload-subtext {
-            color: #80868b;
-            font-size: 12px;
-        }
-
-        .uploaded-files-list {
-            margin-top: 15px;
-        }
-
-        .uploaded-file-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 16px;
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            transition: all 0.2s;
-        }
-
-        .uploaded-file-item:hover {
-            background: #f1f3f4;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .file-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex: 1;
-        }
-
-        .file-icon {
-            font-size: 24px;
-        }
-
-        .file-details {
-            flex: 1;
-        }
-
-        .file-name {
-            font-size: 14px;
-            color: #202124;
-            font-weight: 500;
-            margin-bottom: 2px;
-        }
-
-        .file-meta {
-            font-size: 12px;
-            color: #5f6368;
-        }
-
-        .file-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .file-action-btn {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-
-        .btn-view {
-            background: #e8f0fe;
-            color: #1a73e8;
-        }
-
-        .btn-view:hover {
-            background: #d2e3fc;
-        }
-
-        .btn-remove {
-            background: #fce8e6;
-            color: #d93025;
-        }
-
-        .btn-remove:hover {
-            background: #f6aea9;
-        }
-
-        .add-file-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            background: white;
-            border: 1px solid #dadce0;
-            border-radius: 4px;
-            color: #1a73e8;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 10px;
-        }
-
-        .add-file-btn:hover {
-            background: #f8f9fa;
-            border-color: #1a73e8;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .modal-action-btn {
-            flex: 1;
-            padding: 15px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 14px;
-            transition: all 0.3s;
-        }
-
+        .upload-section { background: white; padding: 20px; border-radius: 8px; margin: 15px 0; border: 1px solid #e0e0e0; }
+        .upload-section h4 { margin: 0 0 15px 0; font-size: 14px; color: #5f6368; }
+        .file-upload-area { border: 2px dashed #dadce0; border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafafa; }
+        .file-upload-area:hover { border-color: #1a73e8; background: #f1f3f4; }
+        .file-upload-area.dragover { border-color: #1a73e8; background: #e8f0fe; }
+        .upload-icon { font-size: 48px; margin-bottom: 10px; opacity: 0.7; }
+        .upload-text { color: #5f6368; font-size: 14px; margin: 5px 0; }
+        .upload-subtext { color: #80868b; font-size: 12px; }
+        .uploaded-files-list { margin-top: 15px; }
+        .uploaded-file-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 8px; transition: all 0.2s; }
+        .uploaded-file-item:hover { background: #f1f3f4; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .file-info { display: flex; align-items: center; gap: 12px; flex: 1; }
+        .file-icon { font-size: 24px; }
+        .file-details { flex: 1; }
+        .file-name { font-size: 14px; color: #202124; font-weight: 500; margin-bottom: 2px; }
+        .file-meta { font-size: 12px; color: #5f6368; }
+        .file-actions { display: flex; gap: 8px; }
+        .file-action-btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .btn-view { background: #e8f0fe; color: #1a73e8; }
+        .btn-view:hover { background: #d2e3fc; }
+        .btn-remove { background: #fce8e6; color: #d93025; }
+        .btn-remove:hover { background: #f6aea9; }
+        .add-file-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: white; border: 1px solid #dadce0; border-radius: 4px; color: #1a73e8; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-top: 10px; }
+        .add-file-btn:hover { background: #f8f9fa; border-color: #1a73e8; }
+        .action-buttons { display: flex; gap: 15px; margin-top: 20px; }
+        .modal-action-btn { flex: 1; padding: 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.3s; }
         .btn-update { background: #4A90E2; color: white; }
         .btn-update:hover:not(:disabled) { background: #357ABD; }
         .btn-submit { background: #7ED321; color: white; }
         .btn-submit:hover:not(:disabled) { background: #6BB91C; }
         .btn-admin { background: #E74C3C; color: white; }
         .modal-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .loading-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-        }
-
+        .loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
         .loading-overlay.show { display: flex; }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -799,7 +523,7 @@ try {
                     if (data.success && data.requirements) {
                         buildRequirements(data.requirements);
                     } else {
-                        container.innerHTML = '<p style="color: red;">Failed to load requirements</p>';
+                        container.innerHTML = '<p style="color: red;">Failed to load requirements: ' + (data.message || 'Unknown error') + '</p>';
                     }
                 })
                 .catch(e => {
@@ -817,12 +541,7 @@ try {
 
                 const statusClass = req.status || 'pending';
                 
-                let files = [];
-                try {
-                    files = req.uploaded_file ? JSON.parse(req.uploaded_file) : [];
-                } catch(e) {
-                    files = [];
-                }
+                const files = req.documents || [];
                 
                 const hasFiles = files.length > 0;
 
@@ -852,10 +571,10 @@ try {
                                                 </div>
                                             </div>
                                             <div class="file-actions">
-                                                <button class="file-action-btn btn-view" onclick="previewFile('${escapeHtml(file.view_link)}', '${escapeHtml(file.filename)}', '${escapeHtml(file.drive_id)}')">
+                                                <button class="file-action-btn btn-view" onclick="previewFile('${escapeHtml(file.url)}', '${escapeHtml(file.filename)}')">
                                                     👁️ Preview
                                                 </button>
-                                                <button class="file-action-btn btn-remove" onclick="deleteFile(${req.requirement_id}, '${escapeHtml(file.drive_id)}')">
+                                                <button class="file-action-btn btn-remove" onclick="deleteFile(${req.requirement_id}, '${escapeHtml(file.public_id)}')">
                                                     🗑️ Remove
                                                 </button>
                                             </div>
@@ -1015,7 +734,6 @@ try {
                     if (result.isConfirmed) {
                         uploadFile(file, reqId);
                     } else {
-                        // Reset input so user can select again
                         document.getElementById('fileInput' + reqId).value = '';
                     }
                 });
@@ -1024,7 +742,6 @@ try {
             if (file.type.startsWith('image/')) {
                 reader.readAsDataURL(file);
             } else {
-                // For non-images, trigger the preview immediately
                 reader.onload({target: {result: null}});
             }
         }
@@ -1048,6 +765,7 @@ try {
             })
             .then(r => r.json())
             .then(data => {
+                Swal.close();
                 if (data.success) {
                     Swal.fire({
                         icon: 'success',
@@ -1055,16 +773,12 @@ try {
                         text: 'File uploaded successfully',
                         timer: 1500,
                         showConfirmButton: false
-                    });
-                    
-                    // Refresh just this requirement section instead of modal close
-                    setTimeout(() => {
+                    }).then(() => {
                         fetchRequirements(currentTask.client_service_id);
-                    }, 1500);
+                    });
                 } else {
                     Swal.fire('Error', data.message, 'error');
                 }
-                // Reset input
                 document.getElementById('fileInput' + reqId).value = '';
             })
             .catch(e => {
@@ -1073,33 +787,29 @@ try {
             });
         }
 
-        function previewFile(viewLink, filename, driveId) {
+        function previewFile(url, filename) {
             const ext = filename.split('.').pop().toLowerCase();
             
             let content = '';
             
             if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                // For images, use direct download link
-                const imgUrl = `https://drive.google.com/uc?id=${driveId}&export=download`;
                 content = `
                     <div style="max-height: 500px; overflow: auto;">
-                        <img src="${imgUrl}" style="max-width: 100%; border-radius: 8px;" />
+                        <img src="${url}" style="max-width: 100%; border-radius: 8px;" />
                     </div>
                 `;
             } else if (ext === 'pdf') {
-                // For PDFs, embed the viewer
                 content = `
-                    <iframe src="https://drive.google.com/file/d/${driveId}/preview" style="width: 100%; height: 500px; border: none; border-radius: 8px;"></iframe>
+                    <iframe src="${url}" style="width: 100%; height: 500px; border: none; border-radius: 8px;"></iframe>
                 `;
             } else {
-                // For other files, show download option
                 content = `
                     <div style="padding: 40px; text-align: center; background: #f5f5f5; border-radius: 8px;">
                         <div style="font-size: 64px; margin-bottom: 20px;">📄</div>
                         <p style="font-size: 16px; margin: 10px 0;">Cannot preview this file type</p>
                         <p style="font-size: 14px; color: #666;">${filename}</p>
-                        <a href="${viewLink}" target="_blank" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #1a73e8; color: white; text-decoration: none; border-radius: 4px;">
-                            Open in Google Drive
+                        <a href="${url}" target="_blank" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #1a73e8; color: white; text-decoration: none; border-radius: 4px;">
+                            Download File
                         </a>
                     </div>
                 `;
@@ -1111,14 +821,14 @@ try {
                 width: '800px',
                 showCloseButton: true,
                 showConfirmButton: false,
-                footer: `<a href="${viewLink}" target="_blank" style="color: #1a73e8;">Open in Google Drive</a>`
+                footer: `<a href="${url}" target="_blank" style="color: #1a73e8;">Download File</a>`
             });
         }
 
-        function deleteFile(reqId, driveId) {
+        function deleteFile(reqId, publicId) {
             Swal.fire({
                 title: 'Delete this file?',
-                text: 'This will remove it from Google Drive permanently',
+                text: 'This will remove it from Cloudinary permanently',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d93025',
@@ -1128,7 +838,7 @@ try {
                     const formData = new FormData();
                     formData.append('action', 'delete_file');
                     formData.append('requirement_id', reqId);
-                    formData.append('drive_id', driveId);
+                    formData.append('public_id', publicId);
 
                     Swal.fire({
                         title: 'Deleting...',
@@ -1147,8 +857,9 @@ try {
                             Swal.fire({
                                 icon: 'success',
                                 title: 'Deleted!',
-                                text: 'File has been removed from Google Drive',
-                                showConfirmButton: true
+                                text: 'File has been removed',
+                                timer: 1500,
+                                showConfirmButton: false
                             }).then(() => {
                                 fetchRequirements(currentTask.client_service_id);
                             });
@@ -1194,7 +905,8 @@ try {
                             Swal.fire({
                                 icon: 'success',
                                 title: 'Success!',
-                                timer: 2000
+                                timer: 1500,
+                                showConfirmButton: false
                             }).then(() => location.reload());
                         } else {
                             Swal.fire('Failed', data.message, 'error');
