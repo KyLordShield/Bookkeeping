@@ -1,116 +1,318 @@
 <?php
+ob_start(); // Start output buffering
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Don't display errors in production
+
 session_start();
 require_once __DIR__ . '/../../config/Database.php';
 
-// Check if user is logged in and is staff
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
     header('Location: ../login_page.php');
     exit;
 }
 
-// Get the staff_id from the database using user_id
 $user_id = $_SESSION['user_id'];
-$db = Database::getInstance()->getConnection();
 
-// Fetch the staff_id for this user
-$stmt = $db->prepare("SELECT staff_id FROM users WHERE user_id = ?");
-$stmt->execute([$user_id]);
-$user_data = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$user_data || !$user_data['staff_id']) {
-    die("Error: Staff ID not found for this user");
+try {
+    $db = Database::getInstance()->getConnection();
+    $stmt = $db->prepare("SELECT staff_id FROM users WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user_data || !$user_data['staff_id']) {
+        die("Error: Staff ID not found");
+    }
+    $staff_id = $user_data['staff_id'];
+} catch (Exception $e) {
+    die("Database error: " . $e->getMessage());
 }
 
-$staff_id = $user_data['staff_id'];
+// Google Drive Configuration
+define('GOOGLE_DRIVE_FOLDER_ID', '1-h_uI0Yn3HZY5aEiLSTlFGs9aOqsYQO2'); // You'll need to create a folder and put its ID here
+define('GOOGLE_CREDENTIALS_PATH', __DIR__ . '/../../config/google-credentials.json');
 
-// Handle AJAX requests for updating requirement status
+// Function to upload file to Google Drive
+function uploadToGoogleDrive($file, $filename) {
+    // Check if credentials file exists
+    if (!file_exists(GOOGLE_CREDENTIALS_PATH)) {
+        throw new Exception('Google credentials file not found');
+    }
+    
+    $credentials = json_decode(file_get_contents(GOOGLE_CREDENTIALS_PATH), true);
+    
+    // Get access token
+    $token = getGoogleAccessToken($credentials);
+    
+    // Prepare file metadata
+    $metadata = [
+        'name' => $filename,
+        'parents' => [GOOGLE_DRIVE_FOLDER_ID]
+    ];
+    
+    // Create multipart upload
+    $boundary = uniqid();
+    $delimiter = "\r\n--" . $boundary . "\r\n";
+    $closeDelimiter = "\r\n--" . $boundary . "--";
+    
+    $multipartBody = $delimiter;
+    $multipartBody .= 'Content-Type: application/json; charset=UTF-8' . "\r\n\r\n";
+    $multipartBody .= json_encode($metadata) . $delimiter;
+    $multipartBody .= 'Content-Type: ' . $file['type'] . "\r\n";
+    $multipartBody .= 'Content-Transfer-Encoding: base64' . "\r\n\r\n";
+    $multipartBody .= base64_encode(file_get_contents($file['tmp_name'])) . $closeDelimiter;
+    
+    // Upload to Google Drive - ADDED supportsAllDrives=true
+    $ch = curl_init('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $multipartBody,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: multipart/related; boundary=' . $boundary,
+            'Content-Length: ' . strlen($multipartBody)
+        ]
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode !== 200) {
+        throw new Exception('Failed to upload to Google Drive: ' . $response);
+    }
+    
+    $result = json_decode($response, true);
+    
+    // Make file publicly accessible
+    makeFilePublic($result['id'], $token);
+    
+    return [
+        'id' => $result['id'],
+        'webViewLink' => "https://drive.google.com/file/d/{$result['id']}/view",
+        'webContentLink' => "https://drive.google.com/uc?id={$result['id']}&export=download"
+    ];
+}
+
+function makeFilePublic($fileId, $token) {
+    // ADDED supportsAllDrives=true
+    $ch = curl_init("https://www.googleapis.com/drive/v3/files/{$fileId}/permissions?supportsAllDrives=true");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'role' => 'reader',
+            'type' => 'anyone'
+        ]),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json'
+        ]
+    ]);
+    
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+// Handle file upload
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['requirement_file'])) {
+    header('Content-Type: application/json');
+    
+    $requirement_id = filter_var($_POST['requirement_id'] ?? 0, FILTER_VALIDATE_INT);
+    
+    if (!$requirement_id) {
+        echo json_encode(['success' => false, 'message' => 'Invalid requirement ID']);
+        exit;
+    }
+    
+    $file = $_FILES['requirement_file'];
+    $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    $max_size = 10 * 1024 * 1024; // 10MB
+    
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'message' => 'Upload error']);
+        exit;
+    }
+    
+    if ($file['size'] > $max_size) {
+        echo json_encode(['success' => false, 'message' => 'File too large (max 10MB)']);
+        exit;
+    }
+    
+    if (!in_array($file['type'], $allowed_types)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid file type']);
+        exit;
+    }
+    
+    try {
+        // Upload to Google Drive
+        $filename = 'req_' . $requirement_id . '_' . time() . '_' . $file['name'];
+        $driveFile = uploadToGoogleDrive($file, $filename);
+        
+        // Get existing files
+        $stmt = $db->prepare("SELECT uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+        $stmt->execute([$requirement_id, $staff_id]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $files = [];
+        if ($result && !empty($result['uploaded_file'])) {
+            $files = json_decode($result['uploaded_file'], true) ?: [];
+        }
+        
+        // Add new file
+        $files[] = [
+            'filename' => $file['name'],
+            'drive_id' => $driveFile['id'],
+            'view_link' => $driveFile['webViewLink'],
+            'download_link' => $driveFile['webContentLink'],
+            'size' => $file['size'],
+            'uploaded_at' => date('Y-m-d H:i:s')
+        ];
+        
+        
+        // Update database
+        $stmt = $db->prepare("UPDATE client_service_requirements SET uploaded_file = ? WHERE requirement_id = ? AND assigned_staff_id = ?");
+        $stmt->execute([json_encode($files), $requirement_id, $staff_id]);
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'File uploaded to Google Drive successfully', 
+            'file' => [
+                'filename' => $file['name'],
+                'drive_id' => $driveFile['id'],
+                'view_link' => $driveFile['webViewLink'],
+                'download_link' => $driveFile['webContentLink'],
+                'size' => $file['size'],
+                'uploaded_at' => date('Y-m-d H:i:s')
+            ]
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Upload failed: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Handle file deletion
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_file') {
+    header('Content-Type: application/json');
+    
+    $requirement_id = filter_var($_POST['requirement_id'] ?? 0, FILTER_VALIDATE_INT);
+    $drive_id = $_POST['drive_id'] ?? '';
+    
+    if (!$requirement_id || !$drive_id) {
+        echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        exit;
+    }
+    
+    try {
+        // Get existing files
+        $stmt = $db->prepare("SELECT uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+        $stmt->execute([$requirement_id, $staff_id]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result && !empty($result['uploaded_file'])) {
+            $files = json_decode($result['uploaded_file'], true) ?: [];
+            
+            // Remove file from array
+            $files = array_filter($files, function($f) use ($drive_id) {
+                return $f['drive_id'] !== $drive_id;
+            });
+            $files = array_values($files);
+            
+            // Update database
+            $stmt = $db->prepare("UPDATE client_service_requirements SET uploaded_file = ? WHERE requirement_id = ? AND assigned_staff_id = ?");
+            $stmt->execute([json_encode($files), $requirement_id, $staff_id]);
+            
+            // Delete from Google Drive
+            $credentials = json_decode(file_get_contents(GOOGLE_CREDENTIALS_PATH), true);
+            $token = getGoogleAccessToken($credentials);
+            
+           $ch = curl_init("https://www.googleapis.com/drive/v3/files/{$drive_id}?supportsAllDrives=true");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CUSTOMREQUEST => 'DELETE',
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: Bearer ' . $token
+                ]
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
+            
+            echo json_encode(['success' => true, 'message' => 'File deleted']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'No files found']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Handle status updates
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     
     if ($_POST['action'] === 'update_status') {
-        $requirement_id = $_POST['requirement_id'] ?? 0;
+        $requirement_id = filter_var($_POST['requirement_id'] ?? 0, FILTER_VALIDATE_INT);
         $new_status = $_POST['status'] ?? '';
         
-        // Allowed statuses for staff
+        if (!$requirement_id) {
+            echo json_encode(['success' => false, 'message' => 'Invalid requirement ID']);
+            exit;
+        }
+        
         $allowed_statuses = ['in_progress', 'pending', 'completed'];
         if (!in_array($new_status, $allowed_statuses)) {
-            echo json_encode(['success' => false, 'message' => 'Invalid status for staff']);
+            echo json_encode(['success' => false, 'message' => 'Invalid status']);
             exit;
         }
         
         try {
-            if ($new_status === 'completed') {
-                // Check if current status is 'approved'
-                $stmt = $db->prepare("SELECT status FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
-                $stmt->execute([$requirement_id, $staff_id]);
-                $current_status = $stmt->fetchColumn();
-                
-                if ($current_status !== 'approved') {
-                    echo json_encode(['success' => false, 'message' => 'Can only set to completed after admin approval']);
-                    exit;
-                }
+            $stmt = $db->prepare("SELECT status, uploaded_file FROM client_service_requirements WHERE requirement_id = ? AND assigned_staff_id = ?");
+            $stmt->execute([$requirement_id, $staff_id]);
+            $current_req = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$current_req) {
+                echo json_encode(['success' => false, 'message' => 'Not authorized']);
+                exit;
             }
             
-            $stmt = $db->prepare("
-                UPDATE client_service_requirements 
-                SET status = ? 
-                WHERE requirement_id = ? AND assigned_staff_id = ?
-            ");
-            $stmt->execute([$new_status, $requirement_id, $staff_id]);
-            $updated = $stmt->rowCount() > 0;
+            // Validation: must upload file before submitting for approval
+            if ($new_status === 'pending' && empty($current_req['uploaded_file'])) {
+                echo json_encode(['success' => false, 'message' => 'Please upload at least one file before submitting']);
+                exit;
+            }
             
-            // Update overall client_service status if all requirements are completed
-            if ($updated && $new_status === 'completed') {
-                $stmt = $db->prepare("
-                    SELECT client_service_id FROM client_service_requirements 
-                    WHERE requirement_id = ?
-                ");
+            if ($new_status === 'completed' && $current_req['status'] !== 'approved') {
+                echo json_encode(['success' => false, 'message' => 'Can only complete after admin approval']);
+                exit;
+            }
+            
+            $stmt = $db->prepare("UPDATE client_service_requirements SET status = ? WHERE requirement_id = ? AND assigned_staff_id = ?");
+            $stmt->execute([$new_status, $requirement_id, $staff_id]);
+            
+            // Check if all requirements completed
+            if ($new_status === 'completed') {
+                $stmt = $db->prepare("SELECT client_service_id FROM client_service_requirements WHERE requirement_id = ?");
                 $stmt->execute([$requirement_id]);
                 $cs = $stmt->fetch(PDO::FETCH_ASSOC);
                 
                 if ($cs) {
-                    // Check if all requirements are completed
                     $stmt = $db->prepare("
-                        SELECT COUNT(*) as total,
-                               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
-                        FROM client_service_requirements 
-                        WHERE client_service_id = ?
+                        SELECT COUNT(*) as total, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+                        FROM client_service_requirements WHERE client_service_id = ?
                     ");
                     $stmt->execute([$cs['client_service_id']]);
                     $counts = $stmt->fetch(PDO::FETCH_ASSOC);
                     
                     if ($counts['total'] > 0 && $counts['total'] == $counts['completed']) {
-                        $stmt = $db->prepare("
-                            UPDATE client_services 
-                            SET overall_status = 'completed' 
-                            WHERE client_service_id = ?
-                        ");
+                        $stmt = $db->prepare("UPDATE client_services SET overall_status = 'completed' WHERE client_service_id = ?");
                         $stmt->execute([$cs['client_service_id']]);
                     }
                 }
             }
             
-            echo json_encode(['success' => $updated, 'message' => $updated ? 'Status updated successfully' : 'No update (wrong ID or not assigned to you)']);
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => 'Failed to update status: ' . $e->getMessage()]);
-        }
-        exit;
-    }
-    
-    if ($_POST['action'] === 'update_checklist') {
-        $requirement_id = $_POST['requirement_id'] ?? 0;
-        $progress_data = $_POST['progress_data'] ?? '';
-        
-        try {
-            $stmt = $db->prepare("
-                UPDATE client_service_requirements 
-                SET progress_data = ? 
-                WHERE requirement_id = ? AND assigned_staff_id = ?
-            ");
-            $stmt->execute([$progress_data, $requirement_id, $staff_id]);
-            $updated = $stmt->rowCount() > 0;
-            
-            echo json_encode(['success' => $updated, 'message' => $updated ? 'Checklist updated' : 'No update (wrong ID or not assigned to you)']);
+            echo json_encode(['success' => true, 'message' => 'Status updated']);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
@@ -118,58 +320,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Get filter from URL
-$filter = $_GET['filter'] ?? 'all';
+// Fetch tasks
+try {
+    $query = "
+        SELECT 
+            cs.client_service_id,
+            c.first_name, c.last_name, c.email, c.phone,
+            s.service_name,
+            cs.overall_status as service_status,
+            cs.start_date,
+            cs.deadline,
+            cs.created_at as service_created_at,
+            COUNT(csr.requirement_id) as total_steps,
+            SUM(CASE WHEN csr.status = 'completed' THEN 1 ELSE 0 END) as completed_steps
+        FROM client_service_requirements csr
+        JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+        JOIN clients c ON cs.client_id = c.client_id
+        JOIN services s ON cs.service_id = s.service_id
+        WHERE csr.assigned_staff_id = ?
+        GROUP BY cs.client_service_id, c.first_name, c.last_name, c.email, c.phone, 
+                 s.service_name, cs.overall_status, cs.start_date, cs.deadline, cs.created_at
+        ORDER BY cs.deadline ASC, cs.created_at DESC
+    ";
+    
+    $stmt = $db->prepare($query);
+    $stmt->execute([$staff_id]);
+    $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Build query based on filter - ONLY show tasks assigned to THIS staff member
-$whereClause = "WHERE csr.assigned_staff_id = ?";
-$params = [$staff_id];
-
-// Fetch tasks assigned to this staff member ONLY
-// GROUP BY client_service_id so we don't show duplicate rows
-$query = "
-    SELECT 
-        cs.client_service_id,
-        c.first_name, c.last_name, c.email, c.phone,
-        s.service_name,
-        cs.overall_status as service_status,
-        cs.start_date,
-        cs.deadline,
-        cs.created_at as service_created_at,
-        COUNT(csr.requirement_id) as total_steps,
-        SUM(CASE WHEN csr.status = 'completed' THEN 1 ELSE 0 END) as completed_steps,
-        GROUP_CONCAT(csr.requirement_name ORDER BY csr.requirement_order SEPARATOR ', ') as all_steps
-    FROM client_service_requirements csr
-    JOIN client_services cs ON csr.client_service_id = cs.client_service_id
-    JOIN clients c ON cs.client_id = c.client_id
-    JOIN services s ON cs.service_id = s.service_id
-    $whereClause
-    GROUP BY cs.client_service_id, c.first_name, c.last_name, c.email, c.phone, 
-             s.service_name, cs.overall_status, cs.start_date, cs.deadline, cs.created_at
-    ORDER BY 
-        cs.deadline ASC,
-        cs.created_at DESC
-";
-
-$stmt = $db->prepare($query);
-$stmt->execute($params);
-$tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Get stats for THIS staff member only
-$stats_query = "
-    SELECT 
-        COUNT(DISTINCT cs.client_service_id) as total,
-        COUNT(DISTINCT CASE WHEN cs.overall_status = 'in_progress' THEN cs.client_service_id END) as in_progress,
-        COUNT(DISTINCT CASE WHEN cs.overall_status = 'pending' THEN cs.client_service_id END) as pending,
-        COUNT(DISTINCT CASE WHEN cs.deadline IS NOT NULL AND DATEDIFF(cs.deadline, NOW()) <= 3 
-              AND cs.overall_status != 'completed' THEN cs.client_service_id END) as urgent
-    FROM client_service_requirements csr
-    JOIN client_services cs ON csr.client_service_id = cs.client_service_id
-    WHERE csr.assigned_staff_id = ?
-";
-$stmt = $db->prepare($stats_query);
-$stmt->execute([$staff_id]);
-$stats = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stats_query = "
+        SELECT 
+            COUNT(DISTINCT cs.client_service_id) as total,
+            COUNT(DISTINCT CASE WHEN cs.overall_status = 'in_progress' THEN cs.client_service_id END) as in_progress,
+            COUNT(DISTINCT CASE WHEN cs.overall_status = 'pending' THEN cs.client_service_id END) as pending,
+            COUNT(DISTINCT CASE WHEN cs.deadline IS NOT NULL AND DATEDIFF(cs.deadline, NOW()) <= 3 
+                  AND cs.overall_status != 'completed' THEN cs.client_service_id END) as urgent
+        FROM client_service_requirements csr
+        JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+        WHERE csr.assigned_staff_id = ?
+    ";
+    $stmt = $db->prepare($stats_query);
+    $stmt->execute([$staff_id]);
+    $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    die("Error: " . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -179,8 +373,6 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
     <title>My Tasks</title>
     <link rel="stylesheet" href="../assets/css_file/staff_pages.css">
     <link rel="stylesheet" href="../assets/css_file/navigation_bar.css">
-    
-    <!-- SweetAlert2 for nice animations -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
@@ -197,9 +389,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             overflow-y: auto;
         }
 
-        .modal.show {
-            display: block;
-        }
+        .modal.show { display: block; }
 
         .modal-content {
             background-color: #fff;
@@ -220,22 +410,11 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             cursor: pointer;
         }
 
-        .back-link {
-            color: #333;
-            text-decoration: none;
-            margin-bottom: 20px;
-            display: inline-block;
-        }
-
-        .modal-header {
-            margin-bottom: 20px;
-        }
-
         .service-info {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 20px;
-            margin-bottom: 30px;
+            margin: 20px 0 30px 0;
             padding: 15px;
             background: #f5f5f5;
             border-radius: 5px;
@@ -257,96 +436,182 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             background: white;
         }
 
-        .timeline-section {
-            background: #f9f9f9;
-            padding: 20px;
+        .requirement-block {
+            background: #fffbea;
+            border: 2px solid #f59e0b;
             border-radius: 8px;
-            margin-bottom: 20px;
+            padding: 20px;
+            margin-bottom: 15px;
         }
 
-        .timeline-item {
+        .requirement-header {
             display: flex;
-            align-items: flex-start;
-            margin-bottom: 20px;
-        }
-
-        .timeline-dot {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-            flex-shrink: 0;
-            color: white;
+            margin-bottom: 15px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 11px;
             font-weight: bold;
         }
 
-        .timeline-dot.blue {
-            background: #4A90E2;
-        }
+        .status-pending { background: #f0f0f0; color: #666; }
+        .status-in_progress { background: #fff3cd; color: #856404; }
+        .status-approved { background: #cce5ff; color: #004085; }
+        .status-completed { background: #d4edda; color: #155724; }
 
-        .timeline-dot.yellow {
-            background: #F5C542;
-        }
-
-        .timeline-dot.green {
-            background: #7ED321;
-        }
-
-        .timeline-content h4 {
-            margin: 0 0 5px 0;
-        }
-
-        .timeline-content p {
-            margin: 0;
-            color: #666;
-            font-size: 14px;
-        }
-
-        .checklist-section {
-            background: #f0f0f0;
+        .upload-section {
+            background: white;
             padding: 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin: 15px 0;
+            border: 1px solid #e0e0e0;
         }
 
-        .checklist-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px;
-            background: white;
+        .upload-section h4 {
+            margin: 0 0 15px 0;
+            font-size: 14px;
+            color: #5f6368;
+        }
+
+        .file-upload-area {
+            border: 2px dashed #dadce0;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+
+        .file-upload-area:hover {
+            border-color: #1a73e8;
+            background: #f1f3f4;
+        }
+
+        .file-upload-area.dragover {
+            border-color: #1a73e8;
+            background: #e8f0fe;
+        }
+
+        .upload-icon {
+            font-size: 48px;
             margin-bottom: 10px;
-            border-radius: 5px;
+            opacity: 0.7;
         }
 
-        .checklist-item input[type="checkbox"] {
-            margin-right: 10px;
-            width: 20px;
-            height: 20px;
+        .upload-text {
+            color: #5f6368;
+            font-size: 14px;
+            margin: 5px 0;
         }
 
-        .checklist-item label {
-            flex: 1;
-            cursor: pointer;
-        }
-
-        .file-upload-btn {
-            background: #333;
-            color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 4px;
-            cursor: pointer;
+        .upload-subtext {
+            color: #80868b;
             font-size: 12px;
         }
 
-        .warning-text {
-            color: #E74C3C;
+        .uploaded-files-list {
+            margin-top: 15px;
+        }
+
+        .uploaded-file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+
+        .uploaded-file-item:hover {
+            background: #f1f3f4;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .file-icon {
+            font-size: 24px;
+        }
+
+        .file-details {
+            flex: 1;
+        }
+
+        .file-name {
             font-size: 14px;
+            color: #202124;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: #5f6368;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-action-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .btn-view {
+            background: #e8f0fe;
+            color: #1a73e8;
+        }
+
+        .btn-view:hover {
+            background: #d2e3fc;
+        }
+
+        .btn-remove {
+            background: #fce8e6;
+            color: #d93025;
+        }
+
+        .btn-remove:hover {
+            background: #f6aea9;
+        }
+
+        .add-file-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            color: #1a73e8;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
             margin-top: 10px;
+        }
+
+        .add-file-btn:hover {
+            background: #f8f9fa;
+            border-color: #1a73e8;
         }
 
         .action-buttons {
@@ -363,56 +628,16 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             cursor: pointer;
             font-weight: bold;
             font-size: 14px;
+            transition: all 0.3s;
         }
 
-        .btn-update {
-            background: #4A90E2;
-            color: white;
-        }
+        .btn-update { background: #4A90E2; color: white; }
+        .btn-update:hover:not(:disabled) { background: #357ABD; }
+        .btn-submit { background: #7ED321; color: white; }
+        .btn-submit:hover:not(:disabled) { background: #6BB91C; }
+        .btn-admin { background: #E74C3C; color: white; }
+        .modal-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .btn-submit {
-            background: #7ED321;
-            color: white;
-        }
-
-        .btn-admin {
-            background: #E74C3C;
-            color: white;
-        }
-
-        .modal-action-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .status-pending {
-            background: #f0f0f0;
-            color: #666;
-        }
-
-        .status-in_progress {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-approved {
-            background: #cce5ff;
-            color: #004085;
-        }
-
-        .status-completed {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        /* Loading animation */
         .loading-overlay {
             display: none;
             position: fixed;
@@ -426,9 +651,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
             justify-content: center;
         }
 
-        .loading-overlay.show {
-            display: flex;
-        }
+        .loading-overlay.show { display: flex; }
 
         .spinner {
             border: 4px solid #f3f3f3;
@@ -472,21 +695,12 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
-            <div class="filter-section">
-                <span class="filter-label">Filtered by Status:</span>
-                <button class="filter-btn <?= $filter === 'all' ? 'active' : '' ?>" onclick="filterTasks('all')">All</button>
-                <button class="filter-btn <?= $filter === 'in_progress' ? 'active' : '' ?>" onclick="filterTasks('in_progress')">In Progress</button>
-                <button class="filter-btn <?= $filter === 'pending' ? 'active' : '' ?>" onclick="filterTasks('pending')">Waiting for Approval</button>
-                <button class="filter-btn <?= $filter === 'urgent' ? 'active' : '' ?>" onclick="filterTasks('urgent')">Urgent</button>
-            </div>
-
             <div class="tasks-table">
                 <table>
                     <thead>
                         <tr>
                             <th>Client Name</th>
                             <th>Service</th>
-                            <th>What to do</th>
                             <th>Status</th>
                             <th>Date Assigned</th>
                             <th>Deadline</th>
@@ -496,7 +710,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                     <tbody>
                         <?php if (empty($tasks)): ?>
                         <tr>
-                            <td colspan="7" style="text-align: center; padding: 40px; color: #999;">
+                            <td colspan="6" style="text-align: center; padding: 40px; color: #999;">
                                 No tasks assigned to you yet
                             </td>
                         </tr>
@@ -509,22 +723,18 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                             </td>
                             <td><?= htmlspecialchars($task['service_name']) ?></td>
                             <td>
-                                <strong><?= $task['total_steps'] ?> Steps Assigned</strong><br>
-                                <small style="color: #666;"><?= htmlspecialchars($task['all_steps']) ?></small>
-                            </td>
-                            <td>
-                                <span class="status-badge status-<?= $task['service_status'] ?>">
-                                    <?= ucwords(str_replace('_', ' ', $task['service_status'])) ?>
+                                <span class="status-badge status-<?= htmlspecialchars($task['service_status']) ?>">
+                                    <?= htmlspecialchars(ucwords(str_replace('_', ' ', $task['service_status']))) ?>
                                 </span>
                                 <br>
                                 <small style="color: #666; font-size: 11px;">
                                     <?= $task['completed_steps'] ?>/<?= $task['total_steps'] ?> completed
                                 </small>
                             </td>
-                            <td><?= $task['service_created_at'] ? date('M d, Y', strtotime($task['service_created_at'])) : ($task['start_date'] ? date('M d, Y', strtotime($task['start_date'])) : '—') ?></td>
+                            <td><?= $task['service_created_at'] ? date('M d, Y', strtotime($task['service_created_at'])) : '—' ?></td>
                             <td><?= $task['deadline'] ? date('M d, Y', strtotime($task['deadline'])) : 'Not set' ?></td>
                             <td>
-                                <button class="action-btn" onclick='openTaskModal(<?= json_encode($task) ?>);'>Open</button>
+                                <button class="action-btn" onclick='openTaskModal(<?= htmlspecialchars(json_encode($task), ENT_QUOTES, 'UTF-8') ?>);'>Open</button>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -535,25 +745,19 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
     </div>
 
-    <!-- Task Detail Modal -->
     <div id="taskModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="closeModal()">&times;</span>
             
-            <a href="#" class="back-link" onclick="closeModal(); return false;">← Back to my Task</a>
-            
-            <div class="modal-header">
-                <h2 id="modalServiceName"></h2>
-            </div>
+            <h2 id="modalServiceName"></h2>
 
             <div class="service-info">
                 <div class="service-info-item">
-                    <label>SERVICE AVAILED:</label>
+                    <label>SERVICE:</label>
                     <input type="text" id="serviceAvailed" readonly>
                 </div>
                 <div class="service-info-item">
@@ -566,15 +770,7 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
-            <div class="timeline-section">
-                <h3>Status Timeline</h3>
-                <div id="timelineContainer"></div>
-            </div>
-
-            <div class="checklist-section">
-                <h3>Task Requirements</h3>
-                <div id="checklistContainer"></div>
-            </div>
+            <div id="requirementsContainer"></div>
         </div>
     </div>
 
@@ -582,199 +778,405 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
         const currentStaffId = <?= json_encode($staff_id) ?>;
         let currentTask = null;
 
-        function filterTasks(filter) {
-            document.getElementById('loadingOverlay').classList.add('show');
-            window.location.href = '?filter=' + filter;
-        }
-
         function openTaskModal(task) {
             currentTask = task;
-            
             document.getElementById('modalServiceName').textContent = task.service_name;
             document.getElementById('serviceAvailed').value = task.service_name;
             document.getElementById('clientContact').value = task.email + (task.phone ? ' • ' + task.phone : '');
             document.getElementById('taskDeadline').value = task.deadline ? new Date(task.deadline).toLocaleDateString() : 'Not set';
 
-            const timeline = document.getElementById('timelineContainer');
-            let timelineHTML = `
-                <div class="timeline-item">
-                    <div class="timeline-dot blue">📋</div>
-                    <div class="timeline-content">
-                        <h4>Service Started</h4>
-                        <p>Assigned by Admin</p>
-                    </div>
-                </div>
-            `;
-
-            if (task.service_status === 'in_progress' || task.service_status === 'pending' || task.service_status === 'completed') {
-                timelineHTML += `
-                    <div class="timeline-item">
-                        <div class="timeline-dot yellow">⏳</div>
-                        <div class="timeline-content">
-                            <h4>In Progress</h4>
-                            <p>${task.completed_steps} of ${task.total_steps} steps completed</p>
-                        </div>
-                    </div>
-                `;
-            }
-
-            if (task.service_status === 'completed') {
-                timelineHTML += `
-                    <div class="timeline-item">
-                        <div class="timeline-dot green">✓</div>
-                        <div class="timeline-content">
-                            <h4>Completed</h4>
-                            <p>All steps finished!</p>
-                        </div>
-                    </div>
-                `;
-            }
-
-            timeline.innerHTML = timelineHTML;
-
-            fetchAllRequirements(task.client_service_id);
-
+            fetchRequirements(task.client_service_id);
             document.getElementById('taskModal').classList.add('show');
         }
 
-        function fetchAllRequirements(client_service_id) {
-            const checklist = document.getElementById('checklistContainer');
-            checklist.innerHTML = '<p style="text-align: center; padding: 20px;">Loading all steps...</p>';
+        function fetchRequirements(client_service_id) {
+            const container = document.getElementById('requirementsContainer');
+            container.innerHTML = '<p style="text-align: center; padding: 20px;">Loading...</p>';
 
             fetch(`get_all_requirements.php?client_service_id=${client_service_id}`)
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     if (data.success && data.requirements) {
-                        buildRequirementsList(data.requirements);
+                        buildRequirements(data.requirements);
                     } else {
-                        checklist.innerHTML = '<p style="color: red;">Failed to load requirements: ' + (data.error || 'Unknown error') + '</p>';
+                        container.innerHTML = '<p style="color: red;">Failed to load requirements</p>';
                     }
                 })
-                .catch(error => {
-                    console.error('Fetch error:', error);
-                    checklist.innerHTML = '<p style="color: red;">Error loading requirements: ' + error.message + '</p>';
+                .catch(e => {
+                    container.innerHTML = '<p style="color: red;">Error: ' + e.message + '</p>';
                 });
         }
 
-        function buildRequirementsList(requirements) {
-            const checklist = document.getElementById('checklistContainer');
+        function buildRequirements(requirements) {
+            const container = document.getElementById('requirementsContainer');
             let html = '';
 
             requirements.forEach(req => {
                 const isYourTask = req.assigned_staff_id == currentStaffId;
+                if (!isYourTask) return;
+
                 const statusClass = req.status || 'pending';
-                const statusText = (req.status || 'pending').replace(/_/g, ' ').toUpperCase();
                 
-                let savedProgress = {};
+                let files = [];
                 try {
-                    savedProgress = req.progress_data ? JSON.parse(req.progress_data) : {};
+                    files = req.uploaded_file ? JSON.parse(req.uploaded_file) : [];
                 } catch(e) {
-                    savedProgress = {};
+                    files = [];
                 }
-
-                let items = [];
-                try {
-                    items = req.checklist_items ? JSON.parse(req.checklist_items) : [];
-                } catch(e) {
-                    items = [];
-                }
-
-                const isSubmitted = items.length === 0 || items.every(item => savedProgress[item]);
+                
+                const hasFiles = files.length > 0;
 
                 html += `
-                    <div class="requirement-block" data-req-id="${req.requirement_id}" style="
-                        background: ${isYourTask ? '#fffbea' : 'white'};
-                        border: 2px solid ${isYourTask ? '#f59e0b' : '#ddd'};
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 15px;
-                    ">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin: 0;">
-                                ${isYourTask ? '🎯 ' : ''}Step ${req.requirement_order}: ${req.requirement_name}
-                                ${isYourTask ? ' (YOUR TASK)' : ''}
-                            </h4>
-                            <span class="status-badge status-${statusClass}" style="font-size: 11px;">
-                                ${statusText}
+                    <div class="requirement-block" data-req-id="${req.requirement_id}">
+                        <div class="requirement-header">
+                            <h3>🎯 ${escapeHtml(req.requirement_name)}</h3>
+                            <span class="status-badge status-${statusClass}">
+                                ${escapeHtml((req.status || 'pending').replace(/_/g, ' ').toUpperCase())}
                             </span>
                         </div>
-                        
-                        ${!isYourTask ? `
-                            <p style="color: #666; font-size: 14px; margin: 10px 0 0 0;">
-                                Assigned to: ${req.assigned_staff_name || 'Another staff member'}
-                            </p>
-                        ` : `
-                            <div style="margin-top: 10px;">
-                                ${items.length > 0 ? items.map((item, idx) => {
-                                    const checked = savedProgress[item] ? 'checked' : '';
-                                    const disabled = req.status !== 'in_progress' ? 'disabled' : '';
-                                    return `
-                                        <div class="checklist-item">
-                                            <input type="checkbox" id="check${req.requirement_id}_${idx}" data-item="${item}" ${checked} ${disabled}
-                                                   onchange="updateChecklist(this, ${req.requirement_id})">
-                                            <label for="check${req.requirement_id}_${idx}">${item}</label>
-                                            <button class="file-upload-btn">📎</button>
+
+                        <div class="upload-section">
+                            <h4>Your work</h4>
+                            
+                            ${hasFiles ? `
+                                <div class="uploaded-files-list">
+                                    ${files.map(file => `
+                                        <div class="uploaded-file-item">
+                                            <div class="file-info">
+                                                <div class="file-icon">${getFileIcon(file.filename)}</div>
+                                                <div class="file-details">
+                                                    <div class="file-name">${escapeHtml(file.filename)}</div>
+                                                    <div class="file-meta">
+                                                        ${formatFileSize(file.size)} • ${formatDate(file.uploaded_at)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="file-actions">
+                                                <button class="file-action-btn btn-view" onclick="previewFile('${escapeHtml(file.view_link)}', '${escapeHtml(file.filename)}', '${escapeHtml(file.drive_id)}')">
+                                                    👁️ Preview
+                                                </button>
+                                                <button class="file-action-btn btn-remove" onclick="deleteFile(${req.requirement_id}, '${escapeHtml(file.drive_id)}')">
+                                                    🗑️ Remove
+                                                </button>
+                                            </div>
                                         </div>
-                                    `;
-                                }).join('') : '<p>No sub-checklist items defined by admin.</p>'}
-                            </div>
-                            <div class="action-buttons">
-                                ${getButtonsForStatus(req.status, req.requirement_id, isSubmitted)}
-                            </div>
-                        `}
+                                    `).join('')}
+                                </div>
+                                <button class="add-file-btn" onclick="document.getElementById('fileInput${req.requirement_id}').click()">
+                                    ➕ Add another file
+                                </button>
+                            ` : `
+                                <div class="file-upload-area" id="uploadArea${req.requirement_id}" 
+                                     onclick="document.getElementById('fileInput${req.requirement_id}').click()"
+                                     ondrop="handleDrop(event, ${req.requirement_id})"
+                                     ondragover="handleDragOver(event)"
+                                     ondragleave="handleDragLeave(event)">
+                                    <div class="upload-icon">📁</div>
+                                    <p class="upload-text">Click to browse or drag files here</p>
+                                    <p class="upload-subtext">PDF, DOC, DOCX, JPG, PNG (Max 10MB)</p>
+                                </div>
+                            `}
+                            
+                            <input type="file" id="fileInput${req.requirement_id}" style="display:none" 
+                                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                   onchange="handleFileUpload(this, ${req.requirement_id})">
+                        </div>
+
+                        <div class="action-buttons">
+                            <button class="modal-action-btn btn-update" 
+                                    onclick="updateStatus('in_progress', ${req.requirement_id})" 
+                                    ${req.status === 'in_progress' ? 'disabled' : ''}>
+                                UPDATE STATUS
+                            </button>
+                            <button class="modal-action-btn btn-submit" 
+                                    onclick="updateStatus('pending', ${req.requirement_id})" 
+                                    ${!hasFiles || req.status === 'pending' ? 'disabled' : ''}>
+                                SUBMIT FOR APPROVAL
+                            </button>
+                            <button class="modal-action-btn btn-admin" 
+                                    ${req.status === 'pending' ? '' : 'disabled'}>
+                                NEEDS ADMIN ACTION
+                            </button>
+                        </div>
                     </div>
                 `;
             });
 
-            checklist.innerHTML = html;
+            container.innerHTML = html || '<p>No tasks assigned to you</p>';
+        }
 
-            requirements.forEach(req => {
-                if (req.assigned_staff_id == currentStaffId && req.status === 'in_progress') {
-                    checkIfAllChecked(req.requirement_id);
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'pdf': '📄',
+                'doc': '📝',
+                'docx': '📝',
+                'jpg': '🖼️',
+                'jpeg': '🖼️',
+                'png': '🖼️'
+            };
+            return icons[ext] || '📎';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            
+            if (minutes < 1) return 'Just now';
+            if (minutes < 60) return minutes + ' min ago';
+            if (hours < 24) return hours + ' hour' + (hours > 1 ? 's' : '') + ' ago';
+            if (days < 7) return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+            
+            return date.toLocaleDateString();
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('dragover');
+        }
+
+        function handleDrop(e, reqId) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const input = document.getElementById('fileInput' + reqId);
+                input.files = files;
+                handleFileUpload(input, reqId);
+            }
+        }
+
+        function handleFileUpload(input, reqId) {
+            const file = input.files[0];
+            if (!file) return;
+
+            // Show preview first
+            showFilePreview(file, reqId);
+        }
+
+        function showFilePreview(file, reqId) {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                let previewContent = '';
+                const fileType = file.type;
+                
+                if (fileType.startsWith('image/')) {
+                    previewContent = `
+                        <div style="max-height: 400px; overflow: auto; margin: 20px 0;">
+                            <img src="${e.target.result}" style="max-width: 100%; border-radius: 8px;" />
+                        </div>
+                    `;
+                } else if (fileType === 'application/pdf') {
+                    previewContent = `
+                        <div style="padding: 20px; background: #f5f5f5; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 64px; margin-bottom: 10px;">📄</div>
+                            <p style="margin: 0; color: #666;">PDF Document</p>
+                            <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">${file.name}</p>
+                            <p style="margin: 0; font-size: 12px; color: #999;">${formatFileSize(file.size)}</p>
+                        </div>
+                    `;
+                } else {
+                    previewContent = `
+                        <div style="padding: 20px; background: #f5f5f5; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 64px; margin-bottom: 10px;">📝</div>
+                            <p style="margin: 0; color: #666;">Document</p>
+                            <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">${file.name}</p>
+                            <p style="margin: 0; font-size: 12px; color: #999;">${formatFileSize(file.size)}</p>
+                        </div>
+                    `;
                 }
+                
+                Swal.fire({
+                    title: 'Upload this file?',
+                    html: previewContent,
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, upload it',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#1a73e8',
+                    cancelButtonColor: '#666',
+                    width: '600px'
+                }).then(result => {
+                    if (result.isConfirmed) {
+                        uploadFile(file, reqId);
+                    } else {
+                        // Reset input so user can select again
+                        document.getElementById('fileInput' + reqId).value = '';
+                    }
+                });
+            };
+            
+            if (file.type.startsWith('image/')) {
+                reader.readAsDataURL(file);
+            } else {
+                // For non-images, trigger the preview immediately
+                reader.onload({target: {result: null}});
+            }
+        }
+
+        function uploadFile(file, reqId) {
+            const formData = new FormData();
+            formData.append('requirement_file', file);
+            formData.append('requirement_id', reqId);
+
+            Swal.fire({
+                title: 'Uploading...',
+                text: 'Please wait while we upload your file',
+                allowOutsideClick: false,
+                showConfirmButton: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Uploaded!',
+                        text: 'File uploaded successfully',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                    
+                    // Refresh just this requirement section instead of modal close
+                    setTimeout(() => {
+                        fetchRequirements(currentTask.client_service_id);
+                    }, 1500);
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+                // Reset input
+                document.getElementById('fileInput' + reqId).value = '';
+            })
+            .catch(e => {
+                Swal.fire('Error', 'Upload failed: ' + e.message, 'error');
+                document.getElementById('fileInput' + reqId).value = '';
             });
         }
 
-        function getButtonsForStatus(status, reqId, isSubmitted) {
-            let buttons = '';
-            if (status === 'in_progress') {
-                buttons = `<button id="reqApprove${reqId}" class="modal-action-btn btn-submit" onclick="updateStatus('pending', ${reqId})" disabled>Submit for Approval</button>`;
-            } else if (status === 'approved') {
-                buttons = `<button class="modal-action-btn btn-update" onclick="updateStatus('completed', ${reqId})">Update Status (Notify Client)</button>`;
-            } else if (status === 'completed') {
-                buttons = `<p style="color: #7ED321; font-weight: bold;">Completed and Notified ✅</p>`;
-            } else if (status === 'pending' || !status) {
-                if (isSubmitted) {
-                    buttons = `<p class="warning-text">Waiting for Admin Approval</p>`;
-                } else {
-                    buttons = `<button class="modal-action-btn btn-update" onclick="updateStatus('in_progress', ${reqId})">Start Task</button>`;
-                }
+        function previewFile(viewLink, filename, driveId) {
+            const ext = filename.split('.').pop().toLowerCase();
+            
+            let content = '';
+            
+            if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                // For images, use direct download link
+                const imgUrl = `https://drive.google.com/uc?id=${driveId}&export=download`;
+                content = `
+                    <div style="max-height: 500px; overflow: auto;">
+                        <img src="${imgUrl}" style="max-width: 100%; border-radius: 8px;" />
+                    </div>
+                `;
+            } else if (ext === 'pdf') {
+                // For PDFs, embed the viewer
+                content = `
+                    <iframe src="https://drive.google.com/file/d/${driveId}/preview" style="width: 100%; height: 500px; border: none; border-radius: 8px;"></iframe>
+                `;
+            } else {
+                // For other files, show download option
+                content = `
+                    <div style="padding: 40px; text-align: center; background: #f5f5f5; border-radius: 8px;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">📄</div>
+                        <p style="font-size: 16px; margin: 10px 0;">Cannot preview this file type</p>
+                        <p style="font-size: 14px; color: #666;">${filename}</p>
+                        <a href="${viewLink}" target="_blank" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #1a73e8; color: white; text-decoration: none; border-radius: 4px;">
+                            Open in Google Drive
+                        </a>
+                    </div>
+                `;
             }
-            return buttons;
+            
+            Swal.fire({
+                title: filename,
+                html: content,
+                width: '800px',
+                showCloseButton: true,
+                showConfirmButton: false,
+                footer: `<a href="${viewLink}" target="_blank" style="color: #1a73e8;">Open in Google Drive</a>`
+            });
         }
 
-        function closeModal() {
-            document.getElementById('taskModal').classList.remove('show');
-            currentTask = null;
+        function deleteFile(reqId, driveId) {
+            Swal.fire({
+                title: 'Delete this file?',
+                text: 'This will remove it from Google Drive permanently',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d93025',
+                confirmButtonText: 'Yes, delete it'
+            }).then(result => {
+                if (result.isConfirmed) {
+                    const formData = new FormData();
+                    formData.append('action', 'delete_file');
+                    formData.append('requirement_id', reqId);
+                    formData.append('drive_id', driveId);
+
+                    Swal.fire({
+                        title: 'Deleting...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+
+                    fetch(window.location.href, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        Swal.close();
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Deleted!',
+                                text: 'File has been removed from Google Drive',
+                                showConfirmButton: true
+                            }).then(() => {
+                                fetchRequirements(currentTask.client_service_id);
+                            });
+                        } else {
+                            Swal.fire('Error', data.message, 'error');
+                        }
+                    })
+                    .catch(e => {
+                        Swal.close();
+                        Swal.fire('Error', 'Delete failed: ' + e.message, 'error');
+                    });
+                }
+            });
         }
 
         function updateStatus(status, reqId) {
             Swal.fire({
                 title: 'Update Status?',
-                text: 'Are you sure you want to update the status to: ' + status.replace(/_/g, ' ').toUpperCase() + '?',
+                text: 'Change status to: ' + status.replace(/_/g, ' ').toUpperCase(),
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#3085d6',
-                cancelButtonColor: '#d33',
-                confirmButtonText: 'Yes, update it!'
-            }).then((result) => {
+                confirmButtonText: 'Yes, update!'
+            }).then(result => {
                 if (result.isConfirmed) {
                     Swal.fire({
                         title: 'Updating...',
                         allowOutsideClick: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
+                        didOpen: () => Swal.showLoading()
                     });
 
                     const formData = new FormData();
@@ -786,115 +1188,40 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
                         method: 'POST',
                         body: formData
                     })
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(data => {
                         if (data.success) {
                             Swal.fire({
                                 icon: 'success',
                                 title: 'Success!',
-                                text: 'Status updated successfully!',
-                                timer: 2000,
-                                showConfirmButton: false
-                            }).then(() => {
-                                location.reload();
-                            });
+                                timer: 2000
+                            }).then(() => location.reload());
                         } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Failed',
-                                text: data.message || 'Failed to update status'
-                            });
+                            Swal.fire('Failed', data.message, 'error');
                         }
                     })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'An error occurred while updating status'
-                        });
+                    .catch(e => {
+                        Swal.fire('Error', e.message, 'error');
                     });
                 }
             });
         }
 
-        function updateChecklist(checkbox, reqId) {
-            const block = document.querySelector(`.requirement-block[data-req-id="${reqId}"]`);
-            if (!block) return;
-
-            const checks = block.querySelectorAll('input[type="checkbox"]');
-            let progress = {};
-
-            checks.forEach(c => {
-                const it = c.getAttribute('data-item');
-                progress[it] = c.checked;
-            });
-
-            const formData = new FormData();
-            formData.append('action', 'update_checklist');
-            formData.append('requirement_id', reqId);
-            formData.append('progress_data', JSON.stringify(progress));
-
-            fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const Toast = Swal.mixin({
-                        toast: true,
-                        position: 'top-end',
-                        showConfirmButton: false,
-                        timer: 2000,
-                        timerProgressBar: true
-                    });
-
-                    Toast.fire({
-                        icon: 'success',
-                        title: checkbox.checked ? 'Item checked!' : 'Item unchecked!'
-                    });
-
-                    checkIfAllChecked(reqId);
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Failed',
-                        text: 'Could not update checklist',
-                        toast: true,
-                        position: 'top-end',
-                        timer: 3000
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
+        function closeModal() {
+            document.getElementById('taskModal').classList.remove('show');
         }
 
-        function checkIfAllChecked(reqId) {
-            const block = document.querySelector(`.requirement-block[data-req-id="${reqId}"]`);
-            if (!block) return;
-
-            const checks = block.querySelectorAll('input[type="checkbox"]');
-            const allChecked = checks.length === 0 || Array.from(checks).every(c => c.checked);
-            const btn = block.querySelector(`#reqApprove${reqId}`);
-            if (btn) {
-                btn.disabled = !allChecked;
-            }
+        function escapeHtml(text) {
+            const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+            return String(text || '').replace(/[&<>"']/g, m => map[m]);
         }
 
-        window.onclick = function(e) {
-            const modal = document.getElementById('taskModal');
-            if (e.target === modal) {
-                closeModal();
-            }
+        window.onclick = e => {
+            if (e.target === document.getElementById('taskModal')) closeModal();
         }
 
-        window.addEventListener('load', function() {
-            setTimeout(() => {
-                document.getElementById('loadingOverlay').classList.remove('show');
-            }, 300);
+        window.addEventListener('load', () => {
+            setTimeout(() => document.getElementById('loadingOverlay').classList.remove('show'), 300);
         });
     </script>
 </body>

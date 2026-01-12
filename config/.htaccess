@@ -1,0 +1,13 @@
+# Deny access to all files in this directory
+<Files "*">
+    Require all denied
+</Files>
+
+# Specifically protect the credentials file
+<Files "google-credentials.json">
+    Require all denied
+</Files>
+
+# Allow PHP scripts to access files (but not web browsers)
+Order Deny,Allow
+Deny from all
