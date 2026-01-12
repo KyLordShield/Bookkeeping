@@ -1,25 +1,26 @@
 <?php
-session_start(); // Must be at the very top
+session_start();
 
+require_once '../../config/cloudinary.php';
 require_once '../../classes/Staff.php';
 
-$staffObj = new Staff();
+$staffObj = new Staff($cloudinary);
+
 $allStaff = $staffObj->getAllStaffWithStats();
 
 $modalStaff = null;
 $modalTasks = [];
 $editStaffId = null;
 
-// ==================== PROCESS FORM SUBMISSIONS ====================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add' || $action === 'edit') {
         $first_name = trim($_POST['first_name'] ?? '');
-        $last_name = trim($_POST['last_name'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $position = trim($_POST['position'] ?? '');
+        $last_name  = trim($_POST['last_name'] ?? '');
+        $email      = trim($_POST['email'] ?? '');
+        $phone      = trim($_POST['phone'] ?? '');
+        $position   = trim($_POST['position'] ?? '');
 
         if (empty($first_name) || empty($last_name) || empty($email)) {
             $_SESSION['flash'] = ['type' => 'error', 'message' => 'First name, last name, and email are required.'];
@@ -29,10 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $data = [
                     'first_name' => $first_name,
-                    'last_name' => $last_name,
-                    'email' => $email,
-                    'phone' => $phone ?: null,
-                    'position' => $position ?: null
+                    'last_name'  => $last_name,
+                    'email'      => $email,
+                    'phone'      => $phone ?: null,
+                    'position'   => $position ?: null
                 ];
 
                 if ($action === 'add') {
@@ -43,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $staffObj->updateStaff($staff_id, $data);
                     $_SESSION['flash'] = ['type' => 'success', 'message' => 'Staff member updated successfully!'];
                 }
+            } catch (Exception $e) {
+                $_SESSION['flash'] = ['type' => 'error', 'message' => $e->getMessage()];
             } catch (PDOException $e) {
                 $_SESSION['flash'] = ['type' => 'error', 'message' => $e->getCode() == 23000 
                     ? 'Email already exists. Please use a different email.'
@@ -59,12 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Always redirect to clean URL after POST
     header("Location: admin_staff_manage.php");
     exit;
 }
 
-// Handle task view modal
 if (isset($_GET['view_staff'])) {
     $viewId = (int)$_GET['view_staff'];
     $modalStaff = $staffObj->getStaffById($viewId);
@@ -72,7 +73,6 @@ if (isset($_GET['view_staff'])) {
     $modalTasks = $staffObj->getTasksByStaffId($viewId, $statusFilter);
 }
 
-// Handle edit modal (instant open with pre-filled data)
 if (isset($_GET['edit_staff'])) {
     $editStaffId = (int)$_GET['edit_staff'];
     $modalStaff = $staffObj->getStaffById($editStaffId);
@@ -87,8 +87,6 @@ if (isset($_GET['edit_staff'])) {
     <title>Staff Management</title>
     <link rel="stylesheet" href="../assets/css_file/admin_pages.css">
     <link rel="stylesheet" href="../assets/css_file/navigation_bar.css">
-
-    <!-- SweetAlert2 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <style>
@@ -116,6 +114,73 @@ if (isset($_GET['edit_staff'])) {
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
         .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+
+        .staff-avatar, .modal-staff-avatar {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .staff-avatar:hover, .modal-staff-avatar:hover {
+            transform: scale(1.08);
+        }
+
+        .modal-staff-avatar {
+            width: 110px;
+            height: 110px;
+            cursor: pointer;
+        }
+
+        .current-profile-preview {
+            margin-top: 10px;
+            max-width: 140px;
+            border-radius: 12px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .current-profile-preview:hover {
+            transform: scale(1.05);
+        }
+
+        .profile-preview-container {
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        .swal2-popup.preview-popup {
+    width: 95vw !important;           /* Force modal to almost full viewport width */
+    max-width: 1100px !important;     /* Cap at very large size for big screens */
+    padding: 1.5rem !important;
+}
+
+.swal2-popup .swal2-image {
+    max-width: 100% !important;       /* Allow image to fill the modal width */
+    max-height: 85vh !important;      /* Prevent overflow vertically */
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain;
+    border-radius: 12px;
+    box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+}
+
+@media (max-width: 768px) {
+    .swal2-popup.preview-popup {
+        width: 98vw !important;
+        padding: 0.8rem !important;
+    }
+    .swal2-popup .swal2-image {
+        max-height: 70vh !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -138,10 +203,14 @@ if (isset($_GET['edit_staff'])) {
                         $fullName = $staff['first_name'] . ' ' . $staff['last_name'];
                         $workload = $staffObj->getWorkloadLevel($staff['active_tasks_count']);
                         $workloadClass = $staffObj->getWorkloadClass($workload);
+                        $avatarUrl = !empty($staff['profile_picture']) ? htmlspecialchars($staff['profile_picture']) : '../assets/default-avatar.png';
                     ?>
                         <div class="staff-card">
                             <div class="staff-header">
-                                <div class="staff-avatar"></div>
+                                <div class="staff-avatar" 
+                                     style="background-image: url('<?= $avatarUrl ?>');"
+                                     onclick="previewImage('<?= $avatarUrl ?>', '<?= htmlspecialchars($fullName) ?>')">
+                                </div>
                                 <div class="staff-info">
                                     <div class="staff-name"><?= htmlspecialchars($fullName) ?></div>
                                     <div class="staff-email"><?= htmlspecialchars($staff['email']) ?></div>
@@ -188,7 +257,13 @@ if (isset($_GET['edit_staff'])) {
         <div class="staff-manage-modal-content">
             <button class="modal-close" onclick="closeStaffModal()">×</button>
             <div class="modal-staff-header">
-                <div class="modal-staff-avatar"></div>
+                <?php 
+                $modalAvatar = !empty($modalStaff['profile_picture']) ? htmlspecialchars($modalStaff['profile_picture']) : '../assets/default-avatar.png';
+                ?>
+                <div class="modal-staff-avatar" 
+                     style="background-image: url('<?= $modalAvatar ?>');"
+                     onclick="previewImage('<?= $modalAvatar ?>', '<?= htmlspecialchars($modalStaff['first_name'] . ' ' . $modalStaff['last_name']) ?>')">
+                </div>
                 <div class="modal-staff-info">
                     <div class="modal-staff-name" id="modalStaffName">Loading...</div>
                     <div class="modal-staff-email" id="modalStaffEmail">Loading...</div>
@@ -225,7 +300,15 @@ if (isset($_GET['edit_staff'])) {
         <div class="staff-manage-modal-content" style="max-width: 600px;">
             <button class="modal-close" onclick="closeAddEditModal()">×</button>
             <h2 id="modalTitle">Add New Staff</h2>
-            <form method="POST" id="staffForm">
+
+            <div class="profile-preview-container" style="text-align:center; margin-bottom:20px;">
+                <img id="editModalAvatar" class="modal-staff-avatar" 
+                     src="../assets/default-avatar.png" 
+                     alt="Profile Picture" 
+                     onclick="previewImage(this.src, document.getElementById('modalTitle').textContent)">
+            </div>
+
+            <form method="POST" id="staffForm" enctype="multipart/form-data">
                 <input type="hidden" name="action" id="formAction" value="add">
                 <input type="hidden" name="staff_id" id="formStaffId">
 
@@ -249,8 +332,18 @@ if (isset($_GET['edit_staff'])) {
                     <label>Position</label>
                     <input type="text" name="position" id="formPosition">
                 </div>
+                <div class="form-group">
+                    <label>Profile Picture</label>
+                    <input type="file" name="profile_picture" id="formProfilePicture" accept="image/jpeg,image/png,image/gif,image/webp">
+                    <small>(Optional - JPG, PNG, GIF, WebP - max 5MB)</small>
 
-                <button type="submit" style="background:#27ae60; color:white; padding:12px 24px; border:none; border-radius:8px; cursor:pointer;">
+                    <div class="profile-preview-container" id="profilePreviewContainer" style="display: none;">
+                        <img id="profilePreview" class="current-profile-preview" src="" alt="Preview">
+                        <small id="previewText">New selected picture (preview)</small>
+                    </div>
+                </div>
+
+                <button type="submit" id="saveStaffBtn" style="background:#27ae60; color:white; padding:12px 24px; border:none; border-radius:8px; cursor:pointer;">
                     Save Staff
                 </button>
             </form>
@@ -280,15 +373,23 @@ if (isset($_GET['edit_staff'])) {
             document.getElementById('staffModal').classList.remove('active');
         }
 
+        function closeAddEditModal() {
+            document.getElementById('addEditModal').classList.remove('active');
+            document.getElementById('profilePreviewContainer').style.display = 'none';
+        }
+
         function openAddEditModal(mode, staffId = null) {
             const modal = document.getElementById('addEditModal');
             const title = document.getElementById('modalTitle');
+            const avatarImg = document.getElementById('editModalAvatar');
 
             if (mode === 'add') {
                 title.textContent = 'Add New Staff';
                 document.getElementById('formAction').value = 'add';
                 document.getElementById('staffForm').reset();
                 document.getElementById('formStaffId').value = '';
+                document.getElementById('profilePreviewContainer').style.display = 'none';
+                avatarImg.src = '../assets/default-avatar.png';
             } else if (mode === 'edit' && staffId) {
                 title.textContent = 'Edit Staff';
                 document.getElementById('formAction').value = 'edit';
@@ -297,10 +398,6 @@ if (isset($_GET['edit_staff'])) {
                 return;
             }
             modal.classList.add('active');
-        }
-
-        function closeAddEditModal() {
-            document.getElementById('addEditModal').classList.remove('active');
         }
 
         function deleteStaff(staffId) {
@@ -326,6 +423,25 @@ if (isset($_GET['edit_staff'])) {
             });
         }
 
+        function previewImage(src, name = 'Profile Picture') {
+            Swal.fire({
+                title: name,
+                imageUrl: src,
+                imageAlt: name,
+                imageWidth: 700,
+                imageHeight: 600,
+                imageClass: 'swal2-image',
+                showConfirmButton: true,
+                confirmButtonText: 'Close',
+                confirmButtonColor: '#3498db',
+                background: '#fff',
+                padding: '1.5rem',
+                customClass: {
+                    popup: 'preview-popup'
+                }
+            });
+        }
+
         window.onclick = function(event) {
             const taskModal = document.getElementById('staffModal');
             const editModal = document.getElementById('addEditModal');
@@ -333,7 +449,6 @@ if (isset($_GET['edit_staff'])) {
             if (event.target === editModal) closeAddEditModal();
         }
 
-        // Auto-load task modal
         <?php if (isset($_GET['view_staff']) && $modalStaff): ?>
             document.getElementById('modalStaffName').textContent = <?= json_encode($modalStaff['first_name'] . ' ' . $modalStaff['last_name']) ?>;
             document.getElementById('modalStaffEmail').textContent = <?= json_encode($modalStaff['email']) ?>;
@@ -374,8 +489,9 @@ if (isset($_GET['edit_staff'])) {
             });
         <?php endif; ?>
 
-        // Auto-fill and open edit modal
-        <?php if ($editStaffId && $modalStaff): ?>
+        <?php if ($editStaffId && $modalStaff): 
+            $currentAvatar = !empty($modalStaff['profile_picture']) ? $modalStaff['profile_picture'] : '../assets/default-avatar.png';
+        ?>
             document.getElementById('modalTitle').textContent = 'Edit Staff';
             document.getElementById('formAction').value = 'edit';
             document.getElementById('formStaffId').value = <?= $editStaffId ?>;
@@ -384,10 +500,13 @@ if (isset($_GET['edit_staff'])) {
             document.getElementById('formEmail').value = <?= json_encode($modalStaff['email']) ?>;
             document.getElementById('formPhone').value = <?= json_encode($modalStaff['phone'] ?? '') ?>;
             document.getElementById('formPosition').value = <?= json_encode($modalStaff['position'] ?? '') ?>;
+
+            const editAvatar = document.getElementById('editModalAvatar');
+            editAvatar.src = <?= json_encode($currentAvatar) ?>;
+
             document.getElementById('addEditModal').classList.add('active');
         <?php endif; ?>
 
-        // Show SweetAlert2 flash message
         <?php if (isset($_SESSION['flash'])): 
             $flash = $_SESSION['flash'];
             unset($_SESSION['flash']);
@@ -402,6 +521,37 @@ if (isset($_GET['edit_staff'])) {
                 timerProgressBar: true
             });
         <?php endif; ?>
+
+        document.getElementById('formProfilePicture')?.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const previewImg = document.getElementById('profilePreview');
+                    previewImg.src = ev.target.result;
+                    document.getElementById('profilePreviewContainer').style.display = 'block';
+                    document.getElementById('previewText').textContent = 'New selected picture (preview)';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('staffForm')?.addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('formProfilePicture');
+            if (fileInput && fileInput.files.length > 0) {
+                e.preventDefault();
+                Swal.fire({
+                    title: 'Uploading picture...',
+                    html: 'Please wait while we upload the profile picture to the cloud.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                this.submit();
+            }
+        });
     </script>
 </body>
 </html>

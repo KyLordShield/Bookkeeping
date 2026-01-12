@@ -5,10 +5,12 @@ require_once __DIR__ . '/../config/Database.php';
 class Staff
 {
     private $pdo;
+    private $cloudinary;
 
-    public function __construct()
+    public function __construct($cloudinary = null)
     {
         $this->pdo = Database::getInstance()->getConnection();
+        $this->cloudinary = $cloudinary;  // can be null → fallback to global if you want
     }
 
     /**
@@ -24,6 +26,7 @@ class Staff
                 s.email,
                 s.phone,
                 s.position,
+                s.profile_picture,
                 COALESCE(active.active_count, 0) AS active_tasks_count,
                 COALESCE(completed.count_completed, 0) AS completed_tasks_count
             FROM staff s
@@ -52,7 +55,7 @@ class Staff
      */
     public function getStaffById($staff_id)
     {
-        $query = "SELECT staff_id, first_name, last_name, email, phone, position 
+        $query = "SELECT staff_id, first_name, last_name, email, phone, position, profile_picture 
                   FROM staff WHERE staff_id = :id";
         $stmt = $this->pdo->prepare($query);
         $stmt->execute(['id' => $staff_id]);
@@ -127,15 +130,20 @@ class Staff
      */
     public function addStaff($data)
     {
-        $sql = "INSERT INTO staff (first_name, last_name, email, phone, position) 
-                VALUES (:first_name, :last_name, :email, :phone, :position)";
+        $profilePicture = $this->handleProfileUpload();
+
+        $sql = "INSERT INTO staff 
+                (first_name, last_name, email, phone, position, profile_picture) 
+                VALUES (:first_name, :last_name, :email, :phone, :position, :profile_picture)";
+        
         $stmt = $this->pdo->prepare($sql);
         return $stmt->execute([
-            ':first_name' => $data['first_name'],
-            ':last_name' => $data['last_name'],
-            ':email' => $data['email'],
-            ':phone' => $data['phone'] ?? null,
-            ':position' => $data['position'] ?? null
+            ':first_name'      => $data['first_name'],
+            ':last_name'       => $data['last_name'],
+            ':email'           => $data['email'],
+            ':phone'           => $data['phone'] ?? null,
+            ':position'        => $data['position'] ?? null,
+            ':profile_picture' => $profilePicture
         ]);
     }
 
@@ -144,22 +152,48 @@ class Staff
      */
     public function updateStaff($staff_id, $data)
     {
+        $profilePicture = $this->handleProfileUpload();
+
         $sql = "UPDATE staff SET 
                 first_name = :first_name,
-                last_name = :last_name,
-                email = :email,
-                phone = :phone,
-                position = :position
-                WHERE staff_id = :staff_id";
-        $stmt = $this->pdo->prepare($sql);
-        return $stmt->execute([
+                last_name  = :last_name,
+                email      = :email,
+                phone      = :phone,
+                position   = :position";
+
+        $params = [
             ':first_name' => $data['first_name'],
-            ':last_name' => $data['last_name'],
-            ':email' => $data['email'],
-            ':phone' => $data['phone'] ?? null,
-            ':position' => $data['position'] ?? null,
-            ':staff_id' => $staff_id
-        ]);
+            ':last_name'  => $data['last_name'],
+            ':email'      => $data['email'],
+            ':phone'      => $data['phone'] ?? null,
+            ':position'   => $data['position'] ?? null,
+            ':staff_id'   => $staff_id
+        ];
+
+        if ($profilePicture !== null) {
+            $sql .= ", profile_picture = :profile_picture";
+            $params[':profile_picture'] = $profilePicture;
+
+            // Optional: delete old image
+            $old = $this->getStaffById($staff_id);
+            if (!empty($old['profile_picture'])) {
+                try {
+                    // Correct way to get public_id from URL
+                    $parsed = parse_url($old['profile_picture'], PHP_URL_PATH);
+                    $publicId = preg_replace('/^\/[^\/]+\/(?:upload\/v\d+\/)?(.+?)(?:\.[^.]+)?$/', '$1', $parsed);
+
+                    $uploadApi = $this->cloudinary->uploadApi();
+                    $uploadApi->destroy($publicId, ['resource_type' => 'image']);
+                } catch (\Exception $e) {
+                    error_log("Failed to delete old Cloudinary image: " . $e->getMessage());
+                }
+            }
+        }
+
+        $sql .= " WHERE staff_id = :staff_id";
+
+        $stmt = $this->pdo->prepare($sql);
+        return $stmt->execute($params);
     }
 
     /**
@@ -186,5 +220,50 @@ class Staff
         $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM client_service_requirements WHERE assigned_staff_id = :id");
         $stmt->execute([':id' => $staff_id]);
         return $stmt->fetchColumn() > 0;
+    }
+
+
+
+
+
+    private function handleProfileUpload()
+    {
+        if (!isset($_FILES['profile_picture']) || $_FILES['profile_picture']['error'] !== UPLOAD_ERR_OK) {
+            return null;
+        }
+
+        $file = $_FILES['profile_picture'];
+
+        $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!in_array($file['type'], $allowed)) {
+            throw new Exception('Only JPG, PNG, GIF, WebP allowed.');
+        }
+        if ($file['size'] > 5 * 1024 * 1024) {
+            throw new Exception('File too large (max 5MB).');
+        }
+
+        if (!$this->cloudinary) {
+            throw new Exception('Cloudinary not configured.');
+        }
+
+        try {
+            // Correct way: use the helper method
+            $uploadApi = $this->cloudinary->uploadApi();
+
+            $result = $uploadApi->upload(
+                $file['tmp_name'],
+                [
+                    'folder'          => 'staff_profiles',
+                    'resource_type'   => 'image',
+                    'overwrite'       => true,
+                    'public_id'       => 'staff_' . uniqid(),
+                    'allowed_formats' => ['jpg', 'png', 'gif', 'webp'],
+                ]
+            );
+
+            return $result['secure_url'];
+        } catch (\Exception $e) {
+            throw new Exception('Cloudinary upload failed: ' . $e->getMessage());
+        }
     }
 }
