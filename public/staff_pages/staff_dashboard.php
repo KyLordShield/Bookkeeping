@@ -877,7 +877,7 @@ try {
         function deleteFile(reqId, publicId) {
             Swal.fire({
                 title: 'Delete this file?',
-                text: 'This will remove it from Cloudinary permanently',
+                text: 'This will remove it from permanently',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d93025',
@@ -926,11 +926,11 @@ try {
 
         function updateStatus(status, reqId) {
             Swal.fire({
-                title: 'Update Status?',
+                title: 'Submit Requirements?',
                 text: 'Change status to: ' + status.replace(/_/g, ' ').toUpperCase(),
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: 'Yes, update!'
+                confirmButtonText: 'Yes, submit!'
             }).then(result => {
                 if (result.isConfirmed) {
                     Swal.fire({

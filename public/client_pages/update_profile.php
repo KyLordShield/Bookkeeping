@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/../classes/Client.php';  // adjust path
+require_once __DIR__ . '/../../classes/Client.php';  // adjust path
 
 if (!isset($_SESSION['client_id'])) {
     header("Location: login.php");

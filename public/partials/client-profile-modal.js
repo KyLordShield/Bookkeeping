@@ -1,3 +1,5 @@
+
+//client-profile-modal.js
 document.addEventListener('DOMContentLoaded', function () {
 
 const modal          = document.getElementById('profileModal');

@@ -36,6 +36,7 @@ $user_id = $_SESSION['user_id'];
 try {
     $db = Database::getInstance()->getConnection();
     
+    // Get staff_id for other queries if needed
     $stmt = $db->prepare("SELECT staff_id FROM users WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -45,25 +46,26 @@ try {
     }
     $staff_id = $user_data['staff_id'];
     
+    // ✅ FIXED: Query notifications using user_id, not staff_id
     $notifications_query = "
-    SELECT 
-        n.notification_id,
-        n.user_id,
-        n.notification_type,
-        n.title,
-        n.message,
-        n.is_read,
-        n.link_url,
-        n.created_at,
-        n.read_at
-    FROM notifications n
-    WHERE n.user_id = ?
-    ORDER BY n.created_at DESC
-";
+        SELECT 
+            n.notification_id,
+            n.user_id,
+            n.notification_type,
+            n.title,
+            n.message,
+            n.is_read,
+            n.link_url,
+            n.created_at,
+            n.read_at
+        FROM notifications n
+        WHERE n.user_id = ?
+        ORDER BY n.created_at DESC
+    ";
 
-$stmt = $db->prepare($notifications_query);
-$stmt->execute([$staff_id]); // Changed from $user_id to $staff_id
-$notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $db->prepare($notifications_query);
+    $stmt->execute([$user_id]); // ✅ Changed from $staff_id to $user_id
+    $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $total_count = count($notifications);
     $unread_count = 0;
@@ -97,8 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         
         try {
+            // ✅ FIXED: Use user_id, not staff_id
             $stmt = $db->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE notification_id = ? AND user_id = ?");
-$stmt->execute([$notification_id, $staff_id]); // Changed from $user_id to $staff_id
+            $stmt->execute([$notification_id, $user_id]);
             
             echo json_encode(['success' => true, 'message' => 'Marked as read']);
         } catch (Exception $e) {
@@ -116,8 +119,9 @@ $stmt->execute([$notification_id, $staff_id]); // Changed from $user_id to $staf
         }
         
         try {
+            // ✅ FIXED: Use user_id, not staff_id
             $stmt = $db->prepare("DELETE FROM notifications WHERE notification_id = ? AND user_id = ?");
-$stmt->execute([$notification_id, $staff_id]); // Changed from $user_id to $staff_id
+            $stmt->execute([$notification_id, $user_id]);
             
             echo json_encode(['success' => true, 'message' => 'Notification dismissed']);
         } catch (Exception $e) {
@@ -147,7 +151,8 @@ $stmt->execute([$notification_id, $staff_id]); // Changed from $user_id to $staf
         
         try {
             $stmt = $db->prepare($new_query);
-$stmt->execute([$staff_id, $last_time]);
+            // ✅ FIXED: Use user_id, not staff_id
+            $stmt->execute([$user_id, $last_time]);
             $new_notifs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             echo json_encode(['success' => true, 'new_notifs' => $new_notifs]);
@@ -174,7 +179,7 @@ $stmt->execute([$staff_id, $last_time]);
         .notification-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
         .notification-card.unread { background: #fff9f0; }
         .notification-header { font-size: 28px; font-weight: bold; margin-bottom: 12px; color: #1a1a1a; }
-        .notification-message { font-size: 18px; color: #333; margin-bottom: 10px; line-height: 1.6; }
+        .notification-message { font-size: 18px; color: #333; margin-bottom: 10px; line-height: 1.6; white-space: pre-line; }
         .notification-time { font-size: 16px; color: #666; }
         .date-filter-section { display: none; }
         .no-updates { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 18px; background: white; border-radius: 12px; }
@@ -188,6 +193,7 @@ $stmt->execute([$staff_id, $last_time]);
         .modal-info { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         .modal-info div { margin-bottom: 10px; }
         .modal-info strong { color: #374151; display: inline-block; min-width: 100px; }
+        .modal-message-full { white-space: pre-line; line-height: 1.6; }
         .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
         .modal-action-btn { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.3s; }
         .btn-mark-read { background: #3b82f6; color: white; }
@@ -237,7 +243,7 @@ $stmt->execute([$staff_id, $last_time]);
             <span class="close-btn" onclick="closeModal()">&times;</span>
             <h2 class="modal-title" id="modalTitle"></h2>
             <div class="modal-info">
-                <div><strong>MESSAGE:</strong> <span id="modalMessage"></span></div>
+                <div><strong>MESSAGE:</strong> <div class="modal-message-full" id="modalMessage"></div></div>
                 <div><strong>DATE:</strong> <span id="modalDate"></span></div>
                 <div><strong>TYPE:</strong> <span id="modalType"></span></div>
                 <div><strong>STATUS:</strong> <span id="modalStatus"></span></div>
@@ -344,7 +350,7 @@ $stmt->execute([$staff_id, $last_time]);
                         if (new Date(notif.created_at) >= todayStart) newToday++;
                         if (new Date(notif.created_at) >= weekAgo) newWeek++;
                         
-                        if (notif.notification_type === 'task_assignment' && !firstTask) {
+                        if (notif.notification_type === 'requirement_review' && !firstTask) {
                             hasNewTask = true;
                             firstTask = notif;
                         }
@@ -355,11 +361,6 @@ $stmt->execute([$staff_id, $last_time]);
                     todayCount += newToday;
                     weekCount += newWeek;
 
-                    document.getElementById('totalCount').textContent = totalCount;
-                    document.getElementById('unreadCount').textContent = unreadCount;
-                    document.getElementById('todayCount').textContent = todayCount;
-                    document.getElementById('weekCount').textContent = weekCount;
-
                     var noUpdates = document.querySelector('.no-updates');
                     if (noUpdates) noUpdates.remove();
 
@@ -368,7 +369,7 @@ $stmt->execute([$staff_id, $last_time]);
                     });
 
                     if (hasNewTask && firstTask) {
-                        console.log('Showing toast for new task');
+                        console.log('Showing toast for requirement review');
                         showToastNotification(firstTask.title, firstTask.message);
                         playNotificationSound();
                         showDesktopNotification(firstTask.title, firstTask.message);
@@ -512,86 +513,12 @@ $stmt->execute([$staff_id, $last_time]);
             });
         }
 
-        function filterByDate(range) {
-            document.querySelectorAll('.date-filter-btn').forEach(function(btn) { btn.classList.remove('active'); });
-            event.target.classList.add('active');
-
-            var now = new Date();
-            var cards = document.querySelectorAll('.notification-card');
-            
-            if (range === 'custom') {
-                document.getElementById('customDateInputs').classList.add('show');
-                return;
-            } else {
-                document.getElementById('customDateInputs').classList.remove('show');
-            }
-
-            cards.forEach(function(card) {
-                var createdDate = new Date(card.dataset.created);
-                var show = false;
-
-                if (range === 'all') {
-                    show = true;
-                } else if (range === 'today') {
-                    var ts = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                    show = createdDate >= ts;
-                } else if (range === 'week') {
-                    var wa = new Date(now - 7 * 24 * 60 * 60 * 1000);
-                    show = createdDate >= wa;
-                } else if (range === 'month') {
-                    var ma = new Date(now - 30 * 24 * 60 * 60 * 1000);
-                    show = createdDate >= ma;
-                }
-
-                card.style.display = show ? 'block' : 'none';
-            });
-
-            checkIfEmpty();
-        }
-
-        function applyCustomDate() {
-            var startDate = new Date(document.getElementById('startDate').value);
-            var endDate = new Date(document.getElementById('endDate').value);
-            endDate.setHours(23, 59, 59);
-
-            if (!startDate || !endDate) {
-                Swal.fire('Error', 'Please select both start and end dates', 'error');
-                return;
-            }
-
-            var cards = document.querySelectorAll('.notification-card');
-            cards.forEach(function(card) {
-                var createdDate = new Date(card.dataset.created);
-                var show = createdDate >= startDate && createdDate <= endDate;
-                card.style.display = show ? 'block' : 'none';
-            });
-
-            checkIfEmpty();
-        }
-
-        function checkIfEmpty() {
-            var visibleCards = Array.from(document.querySelectorAll('.notification-card')).filter(function(c) { return c.style.display !== 'none'; });
-            
-            if (visibleCards.length === 0 && !updatesContainer.querySelector('.no-updates')) {
-                var noUpdatesDiv = document.createElement('div');
-                noUpdatesDiv.className = 'no-updates';
-                noUpdatesDiv.innerHTML = '<p>No updates found for this date range</p>';
-                updatesContainer.appendChild(noUpdatesDiv);
-            } else if (visibleCards.length > 0) {
-                var noUpdatesDiv = updatesContainer.querySelector('.no-updates');
-                if (noUpdatesDiv) noUpdatesDiv.remove();
-            }
-        }
-
         window.onclick = function(e) {
             var modal = document.getElementById('notificationModal');
             if (e.target === modal) {
                 closeModal();
             }
         }
-
-        // Test button - open console and click this
-        console.log('To test notification, run: showToastNotification("Test Title", "Test Message")');
     </script>
 </body>
 </html>
