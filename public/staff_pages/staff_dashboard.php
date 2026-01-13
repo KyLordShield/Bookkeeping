@@ -43,7 +43,10 @@ function uploadToCloudinary($file, $filename) {
     }
     
     $timestamp = time();
-    $signature = sha1("timestamp=$timestamp" . $api_secret);
+    $folder = 'Requirements';
+    
+    // CRITICAL: Include folder in signature calculation
+    $signature = sha1("folder=$folder&timestamp=$timestamp" . $api_secret);
     
     $url = "https://api.cloudinary.com/v1_1/$cloud_name/auto/upload";
     
@@ -55,7 +58,8 @@ function uploadToCloudinary($file, $filename) {
             'file' => new \CURLFile($file['tmp_name'], $file['type'], $filename),
             'api_key' => $api_key,
             'timestamp' => $timestamp,
-            'signature' => $signature
+            'signature' => $signature,
+            'folder' => $folder
         ]
     ]);
     
@@ -74,7 +78,6 @@ function uploadToCloudinary($file, $filename) {
         'url' => $result['secure_url']
     ];
 }
-
 // Handle file upload
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['requirement_file'])) {
     header('Content-Type: application/json');
@@ -221,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        $allowed_statuses = ['in_progress', 'pending', 'completed'];
+        $allowed_statuses = ['in_progress', 'approval_pending', 'completed'];
         if (!in_array($new_status, $allowed_statuses)) {
             echo json_encode(['success' => false, 'message' => 'Invalid status']);
             exit;
@@ -238,7 +241,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             
             // Validation: must have at least one file before submitting for approval (query documents table)
-            if ($new_status === 'pending') {
+            if ($new_status === 'approval_pending') {
                 $stmt = $db->prepare("SELECT COUNT(*) FROM documents WHERE related_to_type = 'requirement' AND related_to_id = ?");
                 $stmt->execute([$requirement_id]);
                 if ($stmt->fetchColumn() === 0) {
@@ -314,7 +317,7 @@ try {
         SELECT 
             COUNT(DISTINCT cs.client_service_id) as total,
             COUNT(DISTINCT CASE WHEN cs.overall_status = 'in_progress' THEN cs.client_service_id END) as in_progress,
-            COUNT(DISTINCT CASE WHEN cs.overall_status = 'pending' THEN cs.client_service_id END) as pending,
+            COUNT(DISTINCT CASE WHEN cs.overall_status = 'approval_pending' THEN cs.client_service_id END) as pending,
             COUNT(DISTINCT CASE WHEN cs.deadline IS NOT NULL AND DATEDIFF(cs.deadline, NOW()) <= 3 
                   AND cs.overall_status != 'completed' THEN cs.client_service_id END) as urgent
         FROM client_service_requirements csr
@@ -366,7 +369,7 @@ try {
         .requirement-block { background: #fffbea; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
         .requirement-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .status-badge { padding: 6px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
-        .status-pending { background: #f0f0f0; color: #666; }
+        .status-approval_pending { background: #f0f0f0; color: #666; }
         .status-in_progress { background: #fff3cd; color: #856404; }
         .status-approved { background: #cce5ff; color: #004085; }
         .status-completed { background: #d4edda; color: #155724; }
@@ -390,6 +393,8 @@ try {
         .file-action-btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
         .btn-view { background: #e8f0fe; color: #1a73e8; }
         .btn-view:hover { background: #d2e3fc; }
+        .btn-download { background: #d4edda; color: #155724; }
+        .btn-download:hover { background: #c3e6cb; }
         .btn-remove { background: #fce8e6; color: #d93025; }
         .btn-remove:hover { background: #f6aea9; }
         .add-file-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: white; border: 1px solid #dadce0; border-radius: 4px; color: #1a73e8; font-size: 14px; cursor: pointer; transition: all 0.2s; margin-top: 10px; }
@@ -555,7 +560,7 @@ try {
                 const isYourTask = req.assigned_staff_id == currentStaffId;
                 if (!isYourTask) return;
 
-                const statusClass = req.status || 'pending';
+                const statusClass = req.status || 'approval_pending';
                 
                 const files = req.documents || [];
                 
@@ -566,7 +571,7 @@ try {
                         <div class="requirement-header">
                             <h3>🎯 ${escapeHtml(req.requirement_name)}</h3>
                             <span class="status-badge status-${statusClass}">
-                                ${escapeHtml((req.status || 'pending').replace(/_/g, ' ').toUpperCase())}
+                                ${escapeHtml((req.status || 'approval_pending').replace(/_/g, ' ').toUpperCase())}
                             </span>
                         </div>
 
@@ -590,6 +595,9 @@ try {
                                                 <button class="file-action-btn btn-view" onclick="previewFile('${escapeHtml(file.url)}', '${escapeHtml(file.filename)}')">
                                                     👁️ Preview
                                                 </button>
+                                                <button class="file-action-btn btn-download" onclick="downloadFile('${escapeHtml(file.url)}', '${escapeHtml(file.filename)}')">
+    📥 Download
+</button>
                                                 <button class="file-action-btn btn-remove" onclick="deleteFile(${req.requirement_id}, '${escapeHtml(file.public_id)}')">
                                                     🗑️ Remove
                                                 </button>
@@ -624,13 +632,13 @@ try {
                                 UPDATE STATUS
                             </button>
                             <button class="modal-action-btn btn-submit" 
-                                    onclick="updateStatus('pending', ${req.requirement_id})" 
-                                    ${!hasFiles || req.status === 'pending' ? 'disabled' : ''}>
+                                    onclick="updateStatus('approval_pending', ${req.requirement_id})" 
+                                    ${!hasFiles || req.status === 'approval_pending' ? 'disabled' : ''}>
                                 SUBMIT FOR APPROVAL
                             </button>
                             <button class="modal-action-btn btn-admin" 
         onclick="openAdminNoteModal(${req.requirement_id}, '${escapeHtml(req.requirement_name)}')"
-        ${req.status === 'pending' ? '' : 'disabled'}>
+        ${req.status === 'approval_pending' ? '' : 'disabled'}>
     NEEDS ADMIN ACTION
 </button>
                         </div>
@@ -762,7 +770,8 @@ try {
                 reader.onload({target: {result: null}});
             }
         }
-
+        
+        
         function uploadFile(file, reqId) {
             const formData = new FormData();
             formData.append('requirement_file', file);
@@ -841,6 +850,29 @@ try {
                 footer: `<a href="${url}" target="_blank" style="color: #1a73e8;">Download File</a>`
             });
         }
+        
+        function downloadFile(url, filename) {
+    // Force download by adding Cloudinary transformation
+    url = url.replace('/upload/', '/upload/fl_attachment/');
+    
+    // Create a temporary link and click it
+    fetch(url)
+        .then(resp => resp.blob())
+        .then(blob => {
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+        })
+        .catch(e => {
+            // Fallback: open in new tab
+            window.open(url, '_blank');
+        });
+}
 
         function deleteFile(reqId, publicId) {
             Swal.fire({
