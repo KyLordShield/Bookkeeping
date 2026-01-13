@@ -5,32 +5,26 @@
 
 /* SIDEBAR CONTAINER */
 .sidebar {
-    position: fixed;          /* stays in place */
+    position: fixed;
     top: 0;
     left: 0;
-    height: 100vh;            /* full viewport height */
+    height: 100vh;
     width: 160px;
-
     background: #e8e8e8;
     padding: 20px;
-
     display: flex;
     flex-direction: column;
     gap: 15px;
-
-    overflow: hidden;         /* hide scrollbar by default */
+    overflow: hidden;
     z-index: 1000;
-
-    scrollbar-width: thin;           /* Firefox */
+    scrollbar-width: thin;
     scrollbar-color: #aaa transparent;
 }
 
-/* SCROLL ENABLED ON HOVER */
 .sidebar:hover {
     overflow-y: auto;
 }
 
-/* WEBKIT SCROLLBAR (Chrome, Edge, Safari) */
 .sidebar::-webkit-scrollbar {
     width: 6px;
 }
@@ -51,14 +45,11 @@
     background: white;
     border: 2px solid #4a9fd8;
     border-radius: 4px;
-
     display: flex;
     align-items: center;
     justify-content: center;
-
     font-size: 24px;
     color: #4a9fd8;
-
     margin-bottom: 10px;
 }
 
@@ -75,34 +66,30 @@
     border-radius: 4px;
     border: none;
     cursor: pointer;
-
     transition: all 0.3s ease;
 }
 
-/* HOVER (NON-ACTIVE) */
 .sidebar a:hover,
 .sidebar button:hover {
     background: #f0f0f0;
     color: #333;
 }
 
-/* ACTIVE PAGE */
 .sidebar a.active {
-    background: #7D1C19 !important;     /* Main red */
+    background: #7D1C19 !important;
     color: white !important;
     border-left: 6px solid #4a9fd8 !important;
     font-weight: bolder;
-    padding-left: 18px;                 /* Adjust for border */
+    padding-left: 18px;
 }
 
-/* ACTIVE HOVER */
 .sidebar a.active:hover {
     background: #631715 !important;
 }
 
 /* LOGOUT BUTTON */
 .logout-form {
-    margin-top: auto;       /* push logout to bottom */
+    margin-top: auto;
 }
 
 .logout-btn {
@@ -112,4 +99,129 @@
 
 .logout-btn:hover {
     background: #B22222 !important;
+}
+
+/* ──────────────────────────────────────────────── */
+/*          PROFILE BUTTON & MODAL ONLY             */
+/* ──────────────────────────────────────────────── */
+
+/* Profile button (placed at bottom) */
+.prof-btn {
+    margin-top: auto;
+    background: #4a6bff;
+    color: white;
+    border: none;
+    padding: 12px;
+    font-size: 15px;
+    cursor: pointer;
+    border-radius: 6px;
+    margin-top: 20px;
+}
+
+.prof-btn:hover {
+    background: #3a5ae0;
+}
+
+/* Modal container */
+.prof-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background-color: rgba(0,0,0,0.55);
+    overflow-y: auto;
+}
+
+/* Modal content box */
+.prof-modal .prof-modal-content {
+    background-color: #ffffff;
+    margin: 8% auto;
+    padding: 28px;
+    border-radius: 10px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    position: relative;
+}
+
+/* Close button */
+.prof-close {
+    color: #777;
+    float: right;
+    font-size: 36px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 0.8;
+}
+
+.prof-close:hover,
+.prof-close:focus {
+    color: #000;
+}
+
+/* View mode content */
+.prof-view p {
+    margin: 12px 0;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* Form groups */
+.prof-form-group {
+    margin-bottom: 18px;
+}
+
+.prof-form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.prof-form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+    font-size: 15px;
+}
+
+/* Form action buttons area */
+.prof-form-actions {
+    margin-top: 28px;
+    text-align: right;
+}
+
+/* Edit / Save / Cancel buttons */
+.prof-btn-edit {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 20px;
+    font-weight: 500;
+}
+
+.prof-btn-save {
+    background: #16a34a;
+    color: white;
+    border: none;
+    padding: 11px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.prof-btn-cancel {
+    background: #6b7280;
+    color: white;
+    border: none;
+    padding: 11px 24px;
+    border-radius: 6px;
+    margin-left: 12px;
+    cursor: pointer;
+    font-weight: 500;
 }

@@ -98,10 +98,11 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             font-size: 0.9em;
             cursor: pointer;
             border: none;
+            color: white;
         }
-        .btn-pending { background: #6c757d; color: white; }
-        .btn-inprogress { background: #0d6efd; color: white; }
-        .btn-completed { background: #198754; color: white; }
+        .btn-pending    { background: #6c757d; }
+        .btn-inprogress { background: #0d6efd; }
+        .btn-completed  { background: #198754; }
 
         .progress-container {
             margin-top: 12px;
@@ -137,16 +138,15 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .modal-content {
             background: white;
             width: 90%;
-            max-width: 720px;
+            max-width: 760px;
             border-radius: 12px;
             padding: 24px;
             max-height: 90vh;
             overflow-y: auto;
-            position: relative;
         }
         .step-row {
             display: grid;
-            grid-template-columns: 50px 1fr 240px;
+            grid-template-columns: 50px 1fr 220px 100px;
             gap: 16px;
             align-items: center;
             margin-bottom: 16px;
@@ -163,6 +163,15 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             border: 1px solid #ddd;
             border-radius: 6px;
             font-size: 0.95em;
+        }
+        .remove-step-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
         }
         .filter-btn.active {
             background: #050505ff !important;
@@ -183,6 +192,18 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             border: none;
             border-radius: 6px;
             cursor: pointer;
+        }
+        .modal-header { margin-bottom: 20px; }
+        .modal-title { font-size: 1.4em; font-weight: bold; }
+        .modal-subtitle { color: #555; margin-top: 6px; }
+        .modal-actions { margin-top: 32px; text-align: right; }
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            font-size: 28px;
+            cursor: pointer;
+            color: #aaa;
         }
     </style>
 </head>
@@ -217,17 +238,16 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
 
         <?php if (empty($tasks)): ?>
-    <div style="text-align:center; padding:80px 0; color:#777; font-style:italic;">
-        No client services found
-        <?= !empty($search) ? ' matching “' . htmlspecialchars($search) . '”' : '' ?>.
-    </div>
-<?php endif; ?>
-
+            <div style="text-align:center; padding:80px 0; color:#777; font-style:italic;">
+                No client services found<?= !empty($search) ? ' matching “' . htmlspecialchars($search) . '”' : '' ?>.
+            </div>
+        <?php endif; ?>
 
         <?php foreach ($tasks as $task): 
-            $isPending = $task['overall_status'] === 'pending';
-            $hasSteps = $task['total_steps'] > 0;
-            $progress = $task['total_steps'] > 0 ? round(($task['completed_steps'] / $task['total_steps']) * 100) : 0;
+            $isCompleted = $task['overall_status'] === 'completed';
+            $isPending   = $task['overall_status'] === 'pending';
+            $hasSteps    = $task['total_steps'] > 0;
+            $progress    = $hasSteps ? round(($task['completed_steps'] / $task['total_steps']) * 100) : 0;
         ?>
         <div class="task-card">
             <div class="task-header">
@@ -251,11 +271,21 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </div>
 
-                <button 
-                    class="staff-assigned-btn <?= $isPending ? 'btn-pending' : 'btn-inprogress' ?>"
-                    data-cs-id="<?= $task['client_service_id'] ?>">
-                    <?= $isPending ? 'Assign Staff' : 'Manage Staff' ?>
-                </button>
+                <?php if ($isCompleted): ?>
+                    <button 
+                        class="staff-assigned-btn btn-completed"
+                        data-cs-id="<?= $task['client_service_id'] ?>"
+                        data-action="view">
+                        View Details
+                    </button>
+                <?php else: ?>
+                    <button 
+                        class="staff-assigned-btn <?= $isPending ? 'btn-pending' : 'btn-inprogress' ?>"
+                        data-cs-id="<?= $task['client_service_id'] ?>"
+                        data-action="edit">
+                        <?= $isPending ? 'Assign Staff' : 'Manage Steps' ?>
+                    </button>
+                <?php endif; ?>
             </div>
 
             <?php if ($hasSteps): ?>
@@ -278,6 +308,7 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
+<!-- Edit / Assign Modal -->
 <div id="assignModal" class="modal">
     <div class="modal-content">
         <button class="modal-close">×</button>
@@ -301,114 +332,154 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <input type="date" name="deadline" id="modalDeadline" style="padding:8px; width:200px;">
             </div>
 
-            <div class="modal-actions" style="margin-top:32px; text-align:right;">
+            <div class="modal-actions">
                 <button type="button" id="cancelModalBtn">Cancel</button>
-                <button type="submit" class="save-btn" style="padding:10px 24px;">Save Assignments</button>
+                <button type="submit" class="save-btn">Save Assignments</button>
             </div>
         </form>
     </div>
 </div>
 
-<script>
-console.log("admin_task script loaded");
+<!-- View Only Modal (for completed services) -->
+<div id="viewModal" class="modal">
+    <div class="modal-content">
+        <button class="modal-close">×</button>
+        
+        <div class="modal-header">
+            <div class="modal-title">Service Requirements (View Only)</div>
+            <div class="modal-subtitle" id="viewModalClientServiceInfo"></div>
+        </div>
 
+        <div class="step-list" id="viewStepsContainer" style="margin: 20px 0;"></div>
+
+        <div style="margin:20px 0;">
+            <label style="font-weight:500; display:block; margin-bottom:6px;">Deadline</label>
+            <div id="viewDeadline" style="padding:8px; font-weight:500; color:#333;"></div>
+        </div>
+
+        <div class="modal-actions">
+            <button type="button" id="closeViewModalBtn">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
 const staffList = <?= json_encode(
     array_map(function($s) {
         return [
-            'id' => (int)$s['staff_id'],
+            'id'   => (int)$s['staff_id'],
             'name' => trim($s['first_name'] . ' ' . $s['last_name'])
         ];
     }, $allStaff),
     JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
 ) ?> || [];
 
-console.log("Staff members loaded:", staffList.length);
-
 function openAssignModal(csId) {
-    console.log("Opening modal for client_service_id:", csId);
     document.getElementById('modalClientServiceId').value = csId;
     document.getElementById('assignModal').classList.add('active');
-    loadClientServiceData(csId);
+    loadClientServiceData(csId, 'edit');
 }
 
-function closeAssignModal() {
-    console.log("Closing modal");
-    document.getElementById('assignModal').classList.remove('active');
+function openViewModal(csId) {
+    document.getElementById('viewModal').classList.add('active');
+    loadClientServiceData(csId, 'view');
 }
 
-async function loadClientServiceData(csId) {
-    console.log("Attempting to load data for csId:", csId);
-    
+async function loadClientServiceData(csId, mode = 'edit') {
     try {
         const response = await fetch(`../api/get_client_service_details.php?client_service_id=${csId}`);
-        console.log("Fetch status:", response.status);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
         
         const data = await response.json();
-        
-        if (!data.success) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to load data',
-                toast: true,
-                position: 'top-end',
-                timer: 4000
-            });
-            return;
-        }
+        if (!data.success) throw new Error(data.error || 'Failed to load data');
 
-        document.getElementById('modalClientServiceInfo').innerHTML = 
-            `Client: <strong>${data.client_name || 'Unknown'}</strong> | Service: <strong>${data.service_name || 'Unknown'}</strong>`;
+        const clientInfo = `Client: <strong>${data.client_name || 'Unknown'}</strong> | Service: <strong>${data.service_name || 'Unknown'}</strong>`;
         
-        document.getElementById('modalDeadline').value = data.deadline || '';
-        
-        const container = document.getElementById('stepsContainer');
-        container.innerHTML = '';
-        
-        if (data.steps && Array.isArray(data.steps) && data.steps.length > 0) {
-            data.steps.forEach(step => {
-                addStepRow(step.requirement_order, step.requirement_name || '', step.assigned_staff_id);
-            });
-        } else {
-            addNewStepRow();
+        if (mode === 'edit') {
+            document.getElementById('modalClientServiceInfo').innerHTML = clientInfo;
+            document.getElementById('modalDeadline').value = data.deadline || '';
+
+            const container = document.getElementById('stepsContainer');
+            container.innerHTML = '';
+
+            if (data.steps && data.steps.length > 0) {
+                data.steps.forEach(step => {
+                    addStepRow(
+                        step.requirement_order,
+                        step.requirement_name || '',
+                        step.assigned_staff_id || null,
+                        step.requirement_id || null,
+                        step.status || 'pending'
+                    );
+                });
+            } else {
+                addNewStepRow();
+            }
+        } else { // view mode
+            document.getElementById('viewModalClientServiceInfo').innerHTML = clientInfo;
+            document.getElementById('viewDeadline').textContent = data.deadline || 'Not set';
+
+            const container = document.getElementById('viewStepsContainer');
+            container.innerHTML = '';
+
+            if (data.steps && data.steps.length > 0) {
+                data.steps.forEach(step => {
+                    const statusColor = 
+                        step.status === 'completed'    ? '#198754' :
+                        step.status === 'in_progress'  ? '#0d6efd' :
+                        step.status === 'on_hold'      ? '#ffc107' : '#6c757d';
+
+                    const row = document.createElement('div');
+                    row.className = 'step-row';
+                    row.style.gridTemplateColumns = '50px 1fr 220px 140px';
+                    row.innerHTML = `
+                        <div class="step-circle">${step.requirement_order}</div>
+                        <div style="font-weight:500;">${step.requirement_name}</div>
+                        <div>${step.assigned_staff_name || '—'}</div>
+                        <div style="text-align:center; font-weight:600; color:${statusColor};">
+                            ${step.status.replace('_', ' ').toUpperCase()}
+                        </div>
+                    `;
+                    container.appendChild(row);
+                });
+            } else {
+                container.innerHTML = '<p style="text-align:center; color:#777; padding:20px;">No requirements defined for this service.</p>';
+            }
         }
     } catch (error) {
-        console.error("Load error:", error);
+        console.error('Load error details:', error);
         Swal.fire({
             icon: 'error',
-            title: 'Connection Error',
-            text: 'Failed to load service details',
+            title: 'Error',
+            text: 'Failed to load service details. Please try again.',
             toast: true,
             position: 'top-end',
-            timer: 5000
+            timer: 4000
         });
     }
 }
 
 function addNewStepRow() {
-    const order = document.querySelectorAll('.step-row').length + 1;
-    addStepRow(order, '', null);
+    const order = document.querySelectorAll('#stepsContainer .step-row').length + 1;
+    addStepRow(order, '', null, null, 'pending');
 }
 
-function addStepRow(order, name = '', staffId = null) {
+function addStepRow(order, name = '', staffId = null, reqId = null, status = 'pending') {
     const container = document.getElementById('stepsContainer');
-    if (!container) {
-        console.error("Steps container not found!");
-        return;
-    }
-
     const row = document.createElement('div');
     row.className = 'step-row';
+    row.dataset.reqId = reqId || '';
 
     let options = '<option value="">-- select staff --</option>';
     staffList.forEach(s => {
         const selected = (s.id == staffId) ? ' selected' : '';
         options += `<option value="${s.id}"${selected}>${s.name}</option>`;
     });
+
+    const canRemove = (status === 'pending');
+    const removeBtn = canRemove 
+        ? `<button type="button" class="remove-step-btn">Remove</button>` 
+        : '';
 
     row.innerHTML = `
         <div class="step-circle">${order}</div>
@@ -418,42 +489,86 @@ function addStepRow(order, name = '', staffId = null) {
         <select name="steps[${order}][staff_id]" class="staff-select" required>
             ${options}
         </select>
+        ${removeBtn}
         <input type="hidden" name="steps[${order}][order]" value="${order}">
+        <input type="hidden" name="steps[${order}][requirement_id]" value="${reqId || ''}">
     `;
 
     container.appendChild(row);
-    console.log(`Added step row #${order}`);
+
+    if (canRemove) {
+        row.querySelector('.remove-step-btn').addEventListener('click', () => {
+            Swal.fire({
+                title: 'Remove this step?',
+                text: "This cannot be undone and is only allowed for pending steps.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, remove'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    row.remove();
+                    renumberSteps();
+                }
+            });
+        });
+    }
+}
+
+function renumberSteps() {
+    document.querySelectorAll('#stepsContainer .step-row').forEach((row, index) => {
+        const num = index + 1;
+        row.querySelector('.step-circle').textContent = num;
+        const prefix = `steps[${num}]`;
+        row.querySelector('input[name*="][name]"]').name          = `${prefix}[name]`;
+        row.querySelector('select').name                          = `${prefix}[staff_id]`;
+        row.querySelector('input[name*="][order]"]').name         = `${prefix}[order]`;
+        row.querySelector('input[name*="][order]"]').value        = num;
+        const reqInput = row.querySelector('input[name*="][requirement_id]"]');
+        if (reqInput) reqInput.name = `${prefix}[requirement_id]`;
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM ready - attaching events");
-
     document.querySelectorAll('.staff-assigned-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const csId = btn.getAttribute('data-cs-id');
-            if (csId) openAssignModal(csId);
+            const csId = btn.dataset.csId;
+            const action = btn.dataset.action;
+            if (action === 'view') {
+                openViewModal(csId);
+            } else {
+                openAssignModal(csId);
+            }
         });
     });
 
-    document.querySelector('.modal-close')?.addEventListener('click', closeAssignModal);
-
-    document.getElementById('assignModal')?.addEventListener('click', e => {
-        if (e.target === e.currentTarget) closeAssignModal();
+    document.querySelectorAll('.modal-close').forEach(el => {
+        el.addEventListener('click', () => {
+            el.closest('.modal').classList.remove('active');
+        });
     });
 
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && document.getElementById('assignModal')?.classList.contains('active')) {
-            closeAssignModal();
-        }
+    document.getElementById('assignModal')?.addEventListener('click', e => {
+        if (e.target === e.currentTarget) e.target.classList.remove('active');
+    });
+
+    document.getElementById('viewModal')?.addEventListener('click', e => {
+        if (e.target === e.currentTarget) e.target.classList.remove('active');
     });
 
     document.getElementById('addStepBtn')?.addEventListener('click', addNewStepRow);
 
-    document.getElementById('cancelModalBtn')?.addEventListener('click', closeAssignModal);
+    document.getElementById('cancelModalBtn')?.addEventListener('click', () => {
+        document.getElementById('assignModal').classList.remove('active');
+    });
 
-    document.getElementById('assignStepsForm').addEventListener('submit', async function(e) {
+    document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
+        document.getElementById('viewModal').classList.remove('active');
+    });
+
+    document.getElementById('assignStepsForm')?.addEventListener('submit', async function(e) {
         e.preventDefault();
-
         const formData = new FormData(this);
 
         try {
@@ -468,21 +583,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 Swal.fire({
                     icon: 'success',
                     title: 'Saved!',
-                    text: 'Assignments have been updated successfully.',
+                    text: 'Assignments updated successfully.',
                     toast: true,
                     position: 'top-end',
-                    timer: 4000,
+                    timer: 3000,
                     timerProgressBar: true
                 });
-
-                closeAssignModal();
-
+                document.getElementById('assignModal').classList.remove('active');
                 setTimeout(() => location.reload(), 1200);
             } else {
                 Swal.fire({
                     icon: 'error',
                     title: 'Failed',
-                    text: result.error || 'Something went wrong while saving.',
+                    text: result.error || 'Could not save changes.',
                     toast: true,
                     timer: 5000
                 });
@@ -492,15 +605,13 @@ document.addEventListener('DOMContentLoaded', () => {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Failed to connect to server. Please try again.',
+                text: 'Failed to connect to server. Check console for details.',
                 toast: true,
                 timer: 5000
             });
         }
     });
 });
-
-console.log("Script initialization completed");
 </script>
 </body>
 </html>

@@ -413,5 +413,6 @@ window.onclick = function(e) {
     }
 }
 </script>
+<script src="../partials/client-profile-modal.js"></script>
 </body>
 </html>

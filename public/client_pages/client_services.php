@@ -356,5 +356,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             }
         }
     </script>
+    <script src="../partials/client-profile-modal.js"></script>
 </body>
 </html>
