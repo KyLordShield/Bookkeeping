@@ -249,5 +249,6 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             </div>
         </div>
     </div>
+    <script src="../partials/client-profile-modal.js"></script>
 </body>
 </html>
