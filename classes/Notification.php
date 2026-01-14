@@ -4,15 +4,19 @@ class Notification {
 
     /**
      * Creates a notification when a staff member is assigned to a task step.
+     * With customizable message
      *
      * @param PDO $pdo Database connection
      * @param int $user_id The user_id of the staff member (from users table)
      * @param int $cs_id client_service_id
      * @param int $req_id requirement_id (the specific step)
+     * @param string $title Notification title
+     * @param string $message Notification message
+     * @param string $link Link URL
      * @param int $created_by The admin/staff who made the assignment (for auditing)
      * @return bool Success or failure
      */
-    public static function createAssignmentNotification($pdo, $user_id, $cs_id, $req_id, $created_by) {
+    public static function createTaskAssignmentNotification($pdo, $user_id, $cs_id, $req_id, $title, $message, $link, $created_by) {
         if (!$pdo instanceof PDO) {
             error_log("Notification: Invalid PDO object provided");
             return false;
@@ -22,13 +26,6 @@ class Notification {
             error_log("Notification: No user_id provided for assignment notification");
             return false;
         }
-
-        $title   = "New Task Assigned";
-        $message = "You have been assigned to step #{$req_id} in client service #{$cs_id}.";
-
-        // Relative path to staff's notification/update page
-        // Adjust query parameters to match how staff_updates.php handles display/filtering
-        $link = "../staff_pages/staff_updates.php?tab=notifications&req_id={$req_id}&cs_id={$cs_id}";
 
         try {
             $stmt = $pdo->prepare("
@@ -41,6 +38,8 @@ class Notification {
 
             if (!$success) {
                 error_log("Notification insert failed: " . implode(", ", $stmt->errorInfo()));
+            } else {
+                error_log("Task assignment notification created for user_id: {$user_id}");
             }
 
             return $success;
@@ -48,6 +47,25 @@ class Notification {
             error_log("Notification error: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Creates a notification when a staff member is assigned to a task step.
+     * (Legacy method - kept for backward compatibility)
+     *
+     * @param PDO $pdo Database connection
+     * @param int $user_id The user_id of the staff member (from users table)
+     * @param int $cs_id client_service_id
+     * @param int $req_id requirement_id (the specific step)
+     * @param int $created_by The admin/staff who made the assignment (for auditing)
+     * @return bool Success or failure
+     */
+    public static function createAssignmentNotification($pdo, $user_id, $cs_id, $req_id, $created_by) {
+        $title   = "New Task Assigned";
+        $message = "You have been assigned to a task in client service #{$cs_id}.";
+        $link = "../staff_pages/staff_updates.php?tab=notifications&req_id={$req_id}&cs_id={$cs_id}";
+        
+        return self::createTaskAssignmentNotification($pdo, $user_id, $cs_id, $req_id, $title, $message, $link, $created_by);
     }
 
 

@@ -164,7 +164,7 @@ $pending = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         .documents-header {
             font-weight: 600;
-            color: #495057;
+            color: black;
             margin-bottom: 10px;
             font-size: 15px;
         }
@@ -176,7 +176,7 @@ $pending = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         .document-item {
-            background: #f8f9fa;
+            background: #ADD8E6;
             border: 1px solid #dee2e6;
             border-radius: 6px;
             padding: 10px;
@@ -193,7 +193,7 @@ $pending = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         .document-name {
             font-size: 13px;
-            color: #495057;
+            color: black;
             word-break: break-word;
         }
 

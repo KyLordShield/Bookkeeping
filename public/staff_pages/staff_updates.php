@@ -36,7 +36,6 @@ $user_id = $_SESSION['user_id'];
 try {
     $db = Database::getInstance()->getConnection();
     
-    // Get staff_id for other queries if needed
     $stmt = $db->prepare("SELECT staff_id FROM users WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -46,7 +45,7 @@ try {
     }
     $staff_id = $user_data['staff_id'];
     
-    // ✅ FIXED: Query notifications using user_id, not staff_id
+    // ✅ FIXED: Use user_id for notifications query
     $notifications_query = "
         SELECT 
             n.notification_id,
@@ -64,7 +63,7 @@ try {
     ";
 
     $stmt = $db->prepare($notifications_query);
-    $stmt->execute([$user_id]); // ✅ Changed from $staff_id to $user_id
+    $stmt->execute([$user_id]); // ✅ USE user_id, NOT staff_id
     $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $total_count = count($notifications);
@@ -99,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         
         try {
-            // ✅ FIXED: Use user_id, not staff_id
+            // ✅ FIXED: Use user_id
             $stmt = $db->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE notification_id = ? AND user_id = ?");
             $stmt->execute([$notification_id, $user_id]);
             
@@ -119,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         
         try {
-            // ✅ FIXED: Use user_id, not staff_id
+            // ✅ FIXED: Use user_id
             $stmt = $db->prepare("DELETE FROM notifications WHERE notification_id = ? AND user_id = ?");
             $stmt->execute([$notification_id, $user_id]);
             
@@ -151,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         try {
             $stmt = $db->prepare($new_query);
-            // ✅ FIXED: Use user_id, not staff_id
+            // ✅ FIXED: Use user_id
             $stmt->execute([$user_id, $last_time]);
             $new_notifs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
@@ -206,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .notification-toast.show { display: block; }
         .notification-toast-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-weight: bold; font-size: 16px; }
         .notification-toast-icon { font-size: 24px; }
-        .notification-toast-body { font-size: 14px; line-height: 1.4; }
+        .notification-toast-body { font-size: 14px; line-height: 1.4; white-space: pre-line; }
         .notification-toast-close { position: absolute; top: 10px; right: 10px; cursor: pointer; font-size: 20px; opacity: 0.7; }
         .notification-toast-close:hover { opacity: 1; }
         @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
@@ -342,17 +341,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     var newUnread = 0;
                     var newToday = 0;
                     var newWeek = 0;
-                    var hasNewTask = false;
-                    var firstTask = null;
+                    var hasNewNotification = false;
+                    var firstNotification = null;
                     
                     data.new_notifs.forEach(function(notif) {
                         if (!notif.is_read) newUnread++;
                         if (new Date(notif.created_at) >= todayStart) newToday++;
                         if (new Date(notif.created_at) >= weekAgo) newWeek++;
                         
-                        if (notif.notification_type === 'requirement_review' && !firstTask) {
-                            hasNewTask = true;
-                            firstTask = notif;
+                        // ✅ BOTH notification types trigger toast
+                        if ((notif.notification_type === 'task_assignment' || 
+                             notif.notification_type === 'requirement_review') && !firstNotification) {
+                            hasNewNotification = true;
+                            firstNotification = notif;
                         }
                     });
 
@@ -361,6 +362,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     todayCount += newToday;
                     weekCount += newWeek;
 
+                    // Update counts if elements exist
+                    if (document.getElementById('totalCount')) {
+                        document.getElementById('totalCount').textContent = totalCount;
+                    }
+                    if (document.getElementById('unreadCount')) {
+                        document.getElementById('unreadCount').textContent = unreadCount;
+                    }
+                    if (document.getElementById('todayCount')) {
+                        document.getElementById('todayCount').textContent = todayCount;
+                    }
+                    if (document.getElementById('weekCount')) {
+                        document.getElementById('weekCount').textContent = weekCount;
+                    }
+
                     var noUpdates = document.querySelector('.no-updates');
                     if (noUpdates) noUpdates.remove();
 
@@ -368,11 +383,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         updatesContainer.insertBefore(createNotificationCard(notif), updatesContainer.firstChild);
                     });
 
-                    if (hasNewTask && firstTask) {
-                        console.log('Showing toast for requirement review');
-                        showToastNotification(firstTask.title, firstTask.message);
+                    // Show toast for BOTH types of notifications
+                    if (hasNewNotification && firstNotification) {
+                        console.log('Showing toast for: ' + firstNotification.notification_type);
+                        showToastNotification(firstNotification.title, firstNotification.message);
                         playNotificationSound();
-                        showDesktopNotification(firstTask.title, firstTask.message);
+                        showDesktopNotification(firstNotification.title, firstNotification.message);
                     }
                 }
             })

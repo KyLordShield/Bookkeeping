@@ -1,6 +1,8 @@
-<!-- partials/navigation_bar.php -->
+<!-- partials/temporaryNavStaff.php -->
 <div class="sidebar">
-    <div class="logo">✓</div>
+<div class="logo">
+        <img src="../assets/images/logo.png" alt="Company Logo">
+    </div>
 
     <?php 
     $current_page = basename($_SERVER['PHP_SELF']);
@@ -15,10 +17,16 @@
        class="nav-button <?php echo ($current_page === 'staff_updates.php') ? 'active' : ''; ?>">
         Update
     </a>
+
+    <!-- Profile button (link to page, NOT modal) -->
+    <a href="staff_profile.php"
+       class="nav-button profile-btn <?php echo ($current_page === 'staff_profile.php') ? 'active' : ''; ?>">
+        Profile
+    </a>
+
     <form method="POST" action="../logout.php" class="logout-form">
         <button type="submit" class="nav-button logout-btn">
             Logout
         </button>
     </form>
-    
 </div>

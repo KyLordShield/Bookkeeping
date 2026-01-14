@@ -29,9 +29,25 @@ try {
         exit;
     }
 
+    // Get client and service info for notification messages
+    $infoStmt = $pdo->prepare("
+        SELECT 
+            CONCAT(c.first_name, ' ', c.last_name) AS client_name,
+            s.service_name
+        FROM client_services cs
+        JOIN clients c ON cs.client_id = c.client_id
+        JOIN services s ON cs.service_id = s.service_id
+        WHERE cs.client_service_id = ?
+    ");
+    $infoStmt->execute([$csId]);
+    $serviceInfo = $infoStmt->fetch(PDO::FETCH_ASSOC);
+    
+    $client_name = $serviceInfo['client_name'] ?? 'Unknown Client';
+    $service_name = $serviceInfo['service_name'] ?? 'Unknown Service';
+
     // 1. Get current requirements (to detect deletions & staff changes)
     $currentStmt = $pdo->prepare("
-        SELECT requirement_id, assigned_staff_id, status 
+        SELECT requirement_id, requirement_name, assigned_staff_id, status 
         FROM client_service_requirements 
         WHERE client_service_id = ?
     ");
@@ -72,7 +88,30 @@ try {
             // Notify only if staff changed
             $old_staff = $existingById[$req_id]['assigned_staff_id'] ?? null;
             if ($staff_id && $staff_id != $old_staff) {
-                Notification::createAssignmentNotification($pdo, $staff_id, $csId, $req_id, $admin_user_id);
+                // ✅ FIX: Get user_id from staff_id
+                $userStmt = $pdo->prepare("SELECT user_id FROM users WHERE staff_id = ? LIMIT 1");
+                $userStmt->execute([$staff_id]);
+                $staffUser = $userStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($staffUser) {
+                    $staff_user_id = $staffUser['user_id'];
+                    
+                    // Create proper notification message
+                    $title = "New Task Assigned";
+                    $message = "You have been assigned to: {$name}\n\nClient: {$client_name}\nService: {$service_name}";
+                    $link = "../staff_pages/staff_updates.php?tab=notifications&req_id={$req_id}&cs_id={$csId}";
+                    
+                    Notification::createTaskAssignmentNotification(
+                        $pdo, 
+                        $staff_user_id, 
+                        $csId, 
+                        $req_id, 
+                        $title,
+                        $message,
+                        $link,
+                        $admin_user_id
+                    );
+                }
             }
         } else {
             // INSERT new requirement
@@ -84,8 +123,32 @@ try {
             $ins->execute([$csId, $name, $order, $staff_id]);
 
             $newReqId = $pdo->lastInsertId();
+            
             if ($staff_id) {
-                Notification::createAssignmentNotification($pdo, $staff_id, $csId, $newReqId, $admin_user_id);
+                // ✅ FIX: Get user_id from staff_id
+                $userStmt = $pdo->prepare("SELECT user_id FROM users WHERE staff_id = ? LIMIT 1");
+                $userStmt->execute([$staff_id]);
+                $staffUser = $userStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($staffUser) {
+                    $staff_user_id = $staffUser['user_id'];
+                    
+                    // Create proper notification message
+                    $title = "New Task Assigned";
+                    $message = "You have been assigned to: {$name}\n\nClient: {$client_name}\nService: {$service_name}";
+                    $link = "../staff_pages/staff_updates.php?tab=notifications&req_id={$newReqId}&cs_id={$csId}";
+                    
+                    Notification::createTaskAssignmentNotification(
+                        $pdo, 
+                        $staff_user_id, 
+                        $csId, 
+                        $newReqId, 
+                        $title,
+                        $message,
+                        $link,
+                        $admin_user_id
+                    );
+                }
             }
         }
     }
@@ -109,12 +172,13 @@ try {
         $stmt->execute([$csId]);
     }
 
-    // 5. Auto-complete overall status if ALL requirements are completed
+    // 5. Update overall_status based on requirements
     $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM client_service_requirements WHERE client_service_id = ?");
     $totalStmt->execute([$csId]);
     $total = (int)$totalStmt->fetchColumn();
 
     if ($total > 0) {
+        // Check if all requirements are completed
         $compStmt = $pdo->prepare("
             SELECT COUNT(*) 
             FROM client_service_requirements 
@@ -124,6 +188,7 @@ try {
         $completedCount = (int)$compStmt->fetchColumn();
 
         if ($completedCount === $total) {
+            // All requirements completed -> mark service as completed
             $stmt = $pdo->prepare("
                 UPDATE client_services 
                 SET overall_status = 'completed',
@@ -131,7 +196,25 @@ try {
                 WHERE client_service_id = ?
             ");
             $stmt->execute([$csId]);
+        } else {
+            // Has requirements but not all completed -> mark as in_progress
+            $stmt = $pdo->prepare("
+                UPDATE client_services 
+                SET overall_status = 'in_progress',
+                    completion_date = NULL
+                WHERE client_service_id = ? AND overall_status = 'pending'
+            ");
+            $stmt->execute([$csId]);
         }
+    } else {
+        // No requirements -> keep as pending
+        $stmt = $pdo->prepare("
+            UPDATE client_services 
+            SET overall_status = 'pending',
+                completion_date = NULL
+            WHERE client_service_id = ?
+        ");
+        $stmt->execute([$csId]);
     }
 
     // Success response

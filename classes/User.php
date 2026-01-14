@@ -19,7 +19,7 @@ class User
     }
 
     /**
-     * Attempt to log in a user (using plain text password - DEVELOPMENT ONLY)
+     * Login Checker
      */
     public function login($username, $password)
     {
@@ -31,49 +31,45 @@ class User
                 LIMIT 1
             ");
             $stmt->execute([$username]);
-            $user = $stmt->fetch();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            // Plain text comparison - DEVELOPMENT/TESTING PURPOSES ONLY
-            if ($user && $user['status'] === 'active' && $password === $user['password_hash']) {
-                $this->user_id   = $user['user_id'];
-                $this->username  = $user['username'];
-                $this->client_id = $user['client_id'];
-                $this->staff_id  = $user['staff_id'];
-                $this->is_admin  = $user['is_admin'];
-
-                // Determine role
-                if ($this->is_admin) {
-                    $this->role = 'admin';
-                } elseif ($this->staff_id !== null) {
-                    $this->role = 'staff';
-                } elseif ($this->client_id !== null) {
-                    $this->role = 'client';
-                } else {
-                    $this->role = 'user'; // fallback
-                }
-
-                if (session_status() === PHP_SESSION_NONE) {
-                    session_start();
-                }
-
-                session_regenerate_id(true);
-
-                $_SESSION['user_id']    = $this->user_id;
-                $_SESSION['username']   = $this->username;
-                $_SESSION['role']       = $this->role;
-
-                if ($this->role === 'staff') {
-                    $_SESSION['staff_id'] = $this->staff_id;
-                } elseif ($this->role === 'client') {
-                    $_SESSION['client_id'] = $this->client_id;
-                }
-
-                $this->updateLastLogin();
-
-                return true;
+            if (!$user) {
+                return false;
             }
 
-            return false;
+            if ($user['status'] !== 'active') {
+                return false;
+            }
+
+            // Verify hashed password
+            if (!password_verify($password, $user['password_hash'])) {
+                return false;
+            }
+
+            // Login successful
+            $this->user_id   = $user['user_id'];
+            $this->username  = $user['username'];
+            $this->client_id = $user['client_id'];
+            $this->staff_id  = $user['staff_id'];
+            $this->is_admin  = $user['is_admin'];
+
+            $this->role = $this->is_admin ? 'admin' : 
+                         ($this->staff_id ? 'staff' : 
+                         ($this->client_id ? 'client' : 'user'));
+
+            session_regenerate_id(true);
+
+            $_SESSION['user_id']    = $this->user_id;
+            $_SESSION['username']   = $this->username;
+            $_SESSION['role']       = $this->role;
+
+            if ($this->role === 'staff') $_SESSION['staff_id'] = $this->staff_id;
+            if ($this->role === 'client') $_SESSION['client_id'] = $this->client_id;
+
+            $this->updateLastLogin();
+
+            return true;
+
         } catch (Exception $e) {
             error_log("Login error: " . $e->getMessage());
             return false;
@@ -161,14 +157,14 @@ class User
     public static function createClientUser(
         int $client_id,
         string $username,
-        string $password,
+        string $plainPassword,
         bool $is_active = true,
         string &$error = ''
     ): bool {
         try {
             $db = Database::getInstance()->getConnection();
 
-            // Check if username already exists
+            // Username exists?
             $check = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
             $check->execute([$username]);
             if ($check->fetchColumn() > 0) {
@@ -176,13 +172,15 @@ class User
                 return false;
             }
 
-            // Check if client already has a user account
+            // Client already has account?
             $checkClient = $db->prepare("SELECT COUNT(*) FROM users WHERE client_id = ?");
             $checkClient->execute([$client_id]);
             if ($checkClient->fetchColumn() > 0) {
                 $error = "This client already has a user account.";
                 return false;
             }
+
+            $password_hash = password_hash($plainPassword, PASSWORD_DEFAULT);
 
             $status = $is_active ? 'active' : 'inactive';
 
@@ -192,8 +190,7 @@ class User
                 VALUES (?, ?, ?, FALSE, ?, NOW())
             ");
 
-            // Store password as plain text (DEVELOPMENT ONLY - NOT SECURE FOR PRODUCTION)
-            $success = $stmt->execute([$username, $password, $client_id, $status]);
+            $success = $stmt->execute([$username, $password_hash, $client_id, $status]);
 
             if (!$success) {
                 $error = "Database error while creating user.";
@@ -203,7 +200,7 @@ class User
 
         } catch (Exception $e) {
             error_log("Error creating client user: " . $e->getMessage());
-            $error = "System error: " . $e->getMessage();
+            $error = "System error.";
             return false;
         }
     }

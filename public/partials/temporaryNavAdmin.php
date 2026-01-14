@@ -1,6 +1,8 @@
 <!-- partials/navigation_bar.php -->
 <div class="sidebar">
-    <div class="logo">✓</div>
+<div class="logo">
+        <img src="../assets/images/logo.png" alt="Company Logo">
+    </div>
 
     <?php 
     $current_page = basename($_SERVER['PHP_SELF']);
