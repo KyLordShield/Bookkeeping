@@ -3,9 +3,10 @@
 session_start();
 require_once '../config/Database.php';
 require_once '../classes/User.php';
-require_once '../public/email_helper.php';  // adjust path if needed
+require_once '../public/email_helper.php';
 
 $message = '';
+$messageType = ''; // 'success' or 'generic'
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -20,7 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Username must be at least 3 characters.";
     } else {
         $db = Database::getInstance()->getConnection();
-        
 
         // Check BOTH username AND email match
         $stmt = $db->prepare("
@@ -63,13 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userName = trim($user['first_name'] . ' ' . $user['last_name']) ?: $user['username'];
 
             if (sendResetCodeEmail($email, $code, $userName)) {
-                $message = "A reset code has been sent to your email address.<br>Please check your inbox (and spam/junk folder).";
+                $message = "success";
+                $messageType = "success";
             } else {
                 $error = "We couldn't send the reset code right now. Please try again later or contact support.";
             }
         } else {
             // Security: same message regardless of whether the combo exists
-            $message = "If the username and email match an existing account, you will receive a reset code shortly.";
+            $message = "generic";
+            $messageType = "generic";
         }
     }
 }
@@ -81,25 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Forgot Password - Client Service Management</title>
-  <link rel="stylesheet" href="assets/css_file/login.css"> <!-- adjust path if needed -->
+  <link rel="stylesheet" href="assets/css_file/login.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
   <div class="login-container">
     <div class="login-panel">
       <h1>Reset Your Password</h1>
       <p>Enter your username and email to receive a reset code.</p>
-
-      <?php if ($error): ?>
-        <p class="error" style="color:#e74c3c; background:#ffe6e6; padding:12px; border-radius:6px;">
-          <?php echo htmlspecialchars($error); ?>
-        </p>
-      <?php endif; ?>
-
-      <?php if ($message): ?>
-        <p class="success" style="color:#27ae60; background:#e8f5e9; padding:12px; border-radius:6px;">
-          <?php echo $message; ?>
-        </p>
-      <?php endif; ?>
 
       <form method="POST">
         <label for="username">Username</label>
@@ -128,17 +119,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </form>
 
       <p style="text-align:center; margin-top:20px; color:white">
-        <a href="login_page.php" style="color: white;" >← Back to Login</a>
+        <a href="login_page.php" style="color: white;">← Back to Login</a>
       </p>
       <p style="text-align:center; margin-top:20px; color:white">
-        <a href="reset-password.php"style="color: white;" >Input Code Here</a>
+        <a href="reset-password.php" style="color: white;">Already have a code? →</a>
       </p>
-      
     </div>
+    
     <!-- RIGHT SIDE - Image -->
     <div class="image-panel">
       <img src="../public/assets/images/forgot_pass.png" alt="Plants by the window">
     </div>
   </div>
+
+  <script>
+    <?php if ($error): ?>
+      Swal.fire({
+        icon: 'error',
+        title: 'Oops...',
+        text: '<?php echo addslashes($error); ?>',
+        confirmButtonColor: '#7D1C19',
+        confirmButtonText: 'Try Again'
+      });
+    <?php endif; ?>
+
+    <?php if ($messageType === 'success'): ?>
+      Swal.fire({
+        icon: 'success',
+        title: 'Code Sent!',
+        html: 'A reset code has been sent to your email.<br><strong>Check your inbox and spam folder.</strong>',
+        confirmButtonText: 'Enter Code Now',
+        confirmButtonColor: '#27ae60',
+        showCancelButton: true,
+        cancelButtonText: 'Later',
+        cancelButtonColor: '#6c757d',
+        allowOutsideClick: false
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = 'reset-password.php';
+        }
+      });
+    <?php elseif ($messageType === 'generic'): ?>
+      Swal.fire({
+        icon: 'info',
+        title: 'Check Your Email',
+        text: 'If the username and email match an existing account, you will receive a reset code shortly.',
+        confirmButtonColor: '#7D1C19',
+        confirmButtonText: 'OK'
+      });
+    <?php endif; ?>
+  </script>
 </body>
 </html>
