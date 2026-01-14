@@ -3,12 +3,11 @@
 session_start();
 require_once __DIR__ . '/../../config/Database.php';
 
-// Check if admin is logged in
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header('Location: ../login_page.php');
-    exit;
+//Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../login.php");
+    exit();
 }
-
 $db = Database::getInstance()->getConnection();
 $alertMessage = '';
 $alertType = '';
