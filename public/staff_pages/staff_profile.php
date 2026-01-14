@@ -6,12 +6,8 @@ require_once '../../classes/Staff.php';
 
 $allowed_roles = ['staff', 'admin'];  
 
-if (!isset($_SESSION['role']) || 
-    !in_array($_SESSION['role'], $allowed_roles) || 
-    !isset($_SESSION['staff_id'])) 
-{
-    
-    header("Location: ../login.php");
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
+    header('Location: ../login_page.php');
     exit;
 }
 

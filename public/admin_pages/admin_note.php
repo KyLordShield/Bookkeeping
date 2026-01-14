@@ -1,6 +1,11 @@
 <?php
 // admin_note.php - Enhanced Admin Notes Management with SweetAlert2
 session_start();
+//Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
+    header("Location: ../login_page.php");
+    exit();
+}
 
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Note.php';

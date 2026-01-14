@@ -2,6 +2,12 @@
 // admin_client_manage.php - Each service per client shown as separate row
 
 session_start();
+//Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
+    header("Location: ../login_page.php");
+    exit();
+}
+
 
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
@@ -10,6 +16,7 @@ require_once __DIR__ . '/../../classes/ServiceRequest.php';
 require_once __DIR__ . '/../../classes/User.php';
 
 $current_staff_id = $_SESSION['staff_id'] ?? 1;
+
 
 // Handle all POST/AJAX actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

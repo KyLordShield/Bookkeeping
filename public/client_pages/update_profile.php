@@ -2,9 +2,10 @@
 session_start();
 require_once __DIR__ . '/../../classes/Client.php';  // adjust path
 
-if (!isset($_SESSION['client_id'])) {
-    header("Location: login.php");
-    exit;
+// Redirect if not logged in as client
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
+    header("Location: ../../login_page.php");
+    exit();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {

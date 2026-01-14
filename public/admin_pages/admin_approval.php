@@ -6,11 +6,12 @@ require_once __DIR__ . '/../../classes/Notification.php';
 // Debug: Check session (remove after testing)
 error_log("Admin Approval Page - Session: " . print_r($_SESSION, true));
 
-// Check if user is logged in
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../login.php');
-    exit;
+//Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
+    header("Location: ../login_page.php");
+    exit();
 }
+
 
 $admin_user_id = $_SESSION['user_id'];
 

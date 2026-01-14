@@ -5,9 +5,10 @@ require_once __DIR__ . '/../../classes/Client.php';
 require_once __DIR__ . '/../../classes/User.php';
 require_once __DIR__ . '/../../config/Database.php';
 
-if (!User::isLoggedIn() || User::getRole() !== 'client') {
-    header('Location: ../login_page.php');
-    exit;
+// Redirect if not logged in as client
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
+    header("Location: ../../login_page.php");
+    exit();
 }
 
 $client_id = $_SESSION['client_id'];

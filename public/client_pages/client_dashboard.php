@@ -4,7 +4,7 @@ session_start();
 
 // Redirect if not logged in as client
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
-    header("Location: ../../login.php");
+    header("Location: ../../login_page.php");
     exit();
 }
 

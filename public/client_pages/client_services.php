@@ -19,11 +19,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
     header('Content-Type: application/json');
 
-    // 1️⃣ AUTH CHECK
-    if (!isset($_SESSION['user_id'])) {
-        echo json_encode(['success' => false, 'message' => 'User not authenticated']);
-        exit;
-    }
+    // Redirect if not logged in as client
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
+    header("Location: ../../login_page.php");
+    exit();
+}
 
     try {
         $db = Database::getInstance()->getConnection();

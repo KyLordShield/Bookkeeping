@@ -2,13 +2,12 @@
 // admin_dashboard.php - Updated Frontend Dashboard (January 2026)
 session_start();
 
-// Uncomment when authentication is implemented
-/*
+//Auth check:
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
-    header("Location: ../login.php");
+    header("Location: ../login_page.php");
     exit();
 }
-*/
+
 
 require_once __DIR__ . '/../../classes/Dashboard.php';
 

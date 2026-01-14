@@ -2,7 +2,11 @@
 // admin_client_manage.php - FIXED: All modals/buttons/filters/search now work
 
 session_start();
-
+//Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
+    header("Location: ../login_page.php");
+    exit();
+}
 // Paths (from public/admin_pages/ → ../../ → root)
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
