@@ -1,7 +1,5 @@
 <?php
 
-
-
 class Database
 {
     // This will hold our single database connection
@@ -41,6 +39,8 @@ class Database
             // Create the connection
             $this->pdo = new PDO($dsn, $username, $password, $options);
             
+            // 🔧 FIX TIMEZONE: Set MySQL timezone to match PHP (Philippines = UTC+8)
+            $this->pdo->exec("SET time_zone = '+08:00'");
             
         } catch (PDOException $e) {
             // Friendly error message for students

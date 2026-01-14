@@ -1,15 +1,10 @@
 <?php
-// Start session FIRST before any output
+// api/update_requirement_status.php
 session_start();
-
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Notification.php';
-
-// Debug logging (remove after testing)
-error_log("Session data: " . print_r($_SESSION, true));
-error_log("POST data: " . print_r($_POST, true));
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -49,7 +44,7 @@ try {
     $pdo = Database::getInstance()->getConnection();
     $pdo->beginTransaction();
 
-    // Get admin's staff_id from user_id
+    // Get admin's staff_id from user_id (may be NULL for admin-only accounts)
     $staffIdStmt = $pdo->prepare("SELECT staff_id FROM users WHERE user_id = ?");
     $staffIdStmt->execute([$admin_user_id]);
     $adminStaffData = $staffIdStmt->fetch(PDO::FETCH_ASSOC);
@@ -93,22 +88,24 @@ try {
 
     $completed_at = ($new_status === 'completed') ? date('Y-m-d H:i:s') : null;
     
-    // Use admin_staff_id instead of admin_user_id
+    // Use admin_staff_id if available, otherwise NULL
     $updateStmt->execute([
         $new_status,
         $completed_at,
-        $admin_staff_id,  // Changed from $admin_user_id
+        $admin_staff_id, // Can be NULL for admin-only accounts
         $admin_notes,
         $requirement_id
     ]);
 
-    // Log the status change - also use staff_id here
-    $logStmt = $pdo->prepare("
-        INSERT INTO requirement_progress_log 
-        (requirement_id, previous_status, new_status, changed_by, notes)
-        VALUES (?, 'approval_pending', ?, ?, ?)
-    ");
-    $logStmt->execute([$requirement_id, $new_status, $admin_staff_id, $admin_notes]);
+    // Log the status change (only if admin has staff_id)
+    if ($admin_staff_id) {
+        $logStmt = $pdo->prepare("
+            INSERT INTO requirement_progress_log 
+            (requirement_id, previous_status, new_status, changed_by, notes)
+            VALUES (?, 'approval_pending', ?, ?, ?)
+        ");
+        $logStmt->execute([$requirement_id, $new_status, $admin_staff_id, $admin_notes]);
+    }
 
     // Get staff user_id for notification
     if ($assigned_staff_id) {
@@ -116,43 +113,23 @@ try {
         $userStmt->execute([$assigned_staff_id]);
         $staff_user = $userStmt->fetch(PDO::FETCH_ASSOC);
         
-        error_log("Looking for user with staff_id: {$assigned_staff_id}");
-        error_log("Found staff user: " . print_r($staff_user, true));
-        
         if ($staff_user) {
             $staff_user_id = $staff_user['user_id'];
             
             // Create notification based on action
             if ($new_status === 'completed') {
-                // Approval notification
                 $title = "Requirement Approved ✓";
-                
-                if (!empty($admin_notes)) {
-                    // Admin provided custom message - use it
-                    $message = "Your submission for '{$req['requirement_name']}' has been approved.\n\nAdmin Note: {$admin_notes}";
-                } else {
-                    // Default message
-                    $message = "Your submission for '{$req['requirement_name']}' has been approved. Great work!";
-                }
-                
+                $message = !empty($admin_notes) 
+                    ? "Your submission for '{$req['requirement_name']}' has been approved.\n\nAdmin Note: {$admin_notes}"
+                    : "Your submission for '{$req['requirement_name']}' has been approved. Great work!";
             } else {
-                // Rejection notification
                 $title = "Requirement Needs Revision";
-                
-                if (!empty($admin_notes)) {
-                    // Admin provided reason - use it
-                    $message = "Your submission for '{$req['requirement_name']}' needs revision.\n\nReason: {$admin_notes}";
-                } else {
-                    // Default message
-                    $message = "Your submission for '{$req['requirement_name']}' has been rejected. Please review and resubmit.";
-                }
+                $message = !empty($admin_notes)
+                    ? "Your submission for '{$req['requirement_name']}' needs revision.\n\nReason: {$admin_notes}"
+                    : "Your submission for '{$req['requirement_name']}' has been rejected. Please review and resubmit.";
             }
             
             $link = "../staff_pages/staff_updates.php?tab=notifications&req_id={$requirement_id}&cs_id={$req['client_service_id']}";
-            
-            error_log("Creating notification for user_id: {$staff_user_id}");
-            error_log("Title: {$title}");
-            error_log("Message: {$message}");
             
             $notifResult = Notification::createRequirementReviewNotification(
                 $pdo,
@@ -165,16 +142,10 @@ try {
                 $admin_user_id
             );
             
-            error_log("Notification creation result: " . ($notifResult ? 'SUCCESS' : 'FAILED'));
-            
             if (!$notifResult) {
                 error_log("WARNING: Failed to create notification for staff user_id: {$staff_user_id}");
             }
-        } else {
-            error_log("WARNING: No user found for staff_id: {$assigned_staff_id}");
         }
-    } else {
-        error_log("WARNING: No assigned_staff_id for requirement {$requirement_id}");
     }
 
     // Check if all requirements are completed for this service

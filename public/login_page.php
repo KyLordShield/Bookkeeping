@@ -92,13 +92,16 @@ if ($scriptDir !== '/') {
           autocomplete="current-password"
         >
 
-        <a href="#" class="forgot">Forgot password?</a>
+        <a href="../public/forgot-password.php" class="forgot">Forgot password?</a>
 
         <button type="submit">Log in</button>
       </form>
 
       <p class="signup">
-        Don’t have an account? <a href="#">Sign Up</a>
+        Don’t have an account? <a href="../public/register_page.php">Sign Up</a>
+      </p>
+      <p class="signup">
+         <a href="index.php">Home</a>
       </p>
     </div>
 
