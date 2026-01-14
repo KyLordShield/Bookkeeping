@@ -1,5 +1,5 @@
 <?php
-// classes/Dashboard.php - Updated to match dashboard requirements (January 2026)
+// classes/Dashboard.php - Final simplified version: Recent activities based on requirement statuses & timestamps (no logs)
 
 require_once __DIR__ . '/../config/Database.php';
 
@@ -12,11 +12,6 @@ class Dashboard
         $this->pdo = Database::getInstance()->getConnection();
     }
 
-    /**
-     * Get active clients count and new this week
-     *
-     * @return array ['total' => int, 'new_this_week' => int]
-     */
     public function getActiveClients(): array
     {
         $stmt = $this->pdo->prepare("
@@ -39,11 +34,6 @@ class Dashboard
         return ['total' => $total, 'new_this_week' => $newThisWeek];
     }
 
-    /**
-     * Get pending approvals (service requests)
-     *
-     * @return int
-     */
     public function getPendingApprovals(): int
     {
         $stmt = $this->pdo->prepare("
@@ -55,17 +45,8 @@ class Dashboard
         return (int) $stmt->fetchColumn();
     }
 
-    /**
-     * Get urgent actions count → Now counts pending requirement approvals only
-     * Adjust table/column names if your requirements table is named differently
-     * (e.g., requirements, document_submissions, client_documents, etc.)
-     *
-     * @return int
-     */
     public function getUrgentActions(): int
     {
-        // Assuming table: client_requirements, column: approval_status = 'pending'
-        // Common alternatives: status = 'pending_approval' or approval_status = 'pending'
         $stmt = $this->pdo->prepare("
             SELECT COUNT(*) as count 
             FROM client_service_requirements 
@@ -75,11 +56,6 @@ class Dashboard
         return (int) $stmt->fetchColumn();
     }
 
-    /**
-     * Get active staff count
-     *
-     * @return int
-     */
     public function getActiveStaff(): int
     {
         $stmt = $this->pdo->prepare("SELECT COUNT(*) as count FROM staff");
@@ -88,85 +64,138 @@ class Dashboard
     }
 
     /**
-     * Get recent activities
-     * - Primary: activity_log with full, self-contained descriptive messages
-     * - Fallback: notes + service requests (if activity_log empty)
-     * Descriptions are now built to be complete sentences including actor & client
-     *
-     * @param int $limit
-     * @return array Each item: ['description' => string, 'timestamp' => datetime]
+     * Recent activities – Based on current statuses + timestamps in client_service_requirements
+     * - approval_pending → new submission awaiting approval (use started_at or fallback to client_services.created_at)
+     * - in_progress → processing started
+     * - completed → recently completed
+     * - rejected/on_hold → optional (added for completeness)
+     * Staff name from assigned_staff_id (submitter/processor) or completed_by
      */
     public function getRecentActivities(int $limit = 8): array
     {
-        // Primary: activity_log (full description with actor + client)
         $stmt = $this->pdo->prepare("
+            -- 1. New submissions awaiting approval
             SELECT 
-                al.timestamp,
+                COALESCE(csr.started_at, cs.created_at) AS timestamp,
                 CONCAT(
-                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ': '), ''),
-                    al.description,
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' submitted '), 'A staff submitted '),
+                    COALESCE(csr.requirement_name, 'a requirement'),
+                    ' for approval for client ', c.first_name, ' ', c.last_name
+                ) AS description
+            FROM client_service_requirements csr
+            JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+            JOIN clients c ON cs.client_id = c.client_id
+            LEFT JOIN staff s ON csr.assigned_staff_id = s.staff_id
+            WHERE csr.status = 'approval_pending'
+
+            UNION ALL
+
+            -- 2. Requirements in progress / approved & being processed
+            SELECT 
+                csr.started_at AS timestamp,
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' started processing '), 'Processing started for '),
+                    COALESCE(csr.requirement_name, 'a requirement'),
+                    ' for client ', c.first_name, ' ', c.last_name
+                ) AS description
+            FROM client_service_requirements csr
+            JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+            JOIN clients c ON cs.client_id = c.client_id
+            LEFT JOIN staff s ON csr.assigned_staff_id = s.staff_id
+            WHERE csr.status = 'in_progress'
+              AND csr.started_at IS NOT NULL
+
+            UNION ALL
+
+            -- 3. Completed requirements
+            SELECT 
+                csr.completed_at AS timestamp,
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' completed '), 'Completed '),
+                    COALESCE(csr.requirement_name, 'a requirement'),
+                    ' for client ', c.first_name, ' ', c.last_name
+                ) AS description
+            FROM client_service_requirements csr
+            JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+            JOIN clients c ON cs.client_id = c.client_id
+            LEFT JOIN staff s ON csr.completed_by = s.staff_id
+            WHERE csr.status = 'completed'
+              AND csr.completed_at IS NOT NULL
+
+            UNION ALL
+
+            -- 4. Rejected requirements (optional – remove if not needed)
+            SELECT 
+                COALESCE(csr.completed_at, csr.started_at) AS timestamp,
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' rejected '), 'Rejected '),
+                    COALESCE(csr.requirement_name, 'a requirement'),
+                    ' for client ', c.first_name, ' ', c.last_name
+                ) AS description
+            FROM client_service_requirements csr
+            JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+            JOIN clients c ON cs.client_id = c.client_id
+            LEFT JOIN staff s ON csr.assigned_staff_id = s.staff_id
+            WHERE csr.status = 'rejected'
+
+            UNION ALL
+
+            -- 5. On hold requirements (optional)
+            SELECT 
+                COALESCE(csr.started_at, cs.created_at) AS timestamp,
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' put on hold '), 'On hold: '),
+                    COALESCE(csr.requirement_name, 'a requirement'),
+                    ' for client ', c.first_name, ' ', c.last_name
+                ) AS description
+            FROM client_service_requirements csr
+            JOIN client_services cs ON csr.client_service_id = cs.client_service_id
+            JOIN clients c ON cs.client_id = c.client_id
+            LEFT JOIN staff s ON csr.assigned_staff_id = s.staff_id
+            WHERE csr.status = 'on_hold'
+
+            UNION ALL
+
+            -- 6. Service requests
+            SELECT 
+                sr.requested_at AS timestamp,
+                CONCAT(
+                    'New service request: ', se.service_name,
+                    ' from client ', c.first_name, ' ', c.last_name,
+                    ' (status: ', sr.request_status, ')'
+                ) AS description
+            FROM service_requests sr
+            JOIN services se ON sr.service_id = se.service_id
+            JOIN clients c ON sr.client_id = c.client_id
+
+            UNION ALL
+
+            -- 7. Notes
+            SELECT 
+                n.created_at AS timestamp,
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ' added note: '), 'Note added: '),
+                    n.title,
                     COALESCE(CONCAT(' for client ', c.first_name, ' ', c.last_name), '')
                 ) AS description
-            FROM activity_log al
-            LEFT JOIN clients c ON al.related_entity_type = 'client' AND al.related_entity_id = c.client_id
-            LEFT JOIN staff s ON al.user_id IN (SELECT user_id FROM users WHERE staff_id = s.staff_id)
-            ORDER BY al.timestamp DESC
+            FROM notes n
+            LEFT JOIN clients c ON n.related_client_id = c.client_id
+            LEFT JOIN staff s ON n.created_by = s.staff_id
+
+            ORDER BY timestamp DESC
             LIMIT :limit
         ");
+
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
-        $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Fallback if activity_log is empty
-        if (empty($activities)) {
-            $stmt = $this->pdo->prepare("
-                (
-                    SELECT 
-                        n.created_at AS timestamp,
-                        CONCAT(
-                            COALESCE(CONCAT(s.first_name, ' ', s.last_name, ': '), 'System: '),
-                            'Added note: ', n.title,
-                            COALESCE(CONCAT(' for client ', c.first_name, ' ', c.last_name), '')
-                        ) AS description
-                    FROM notes n
-                    LEFT JOIN clients c ON n.related_client_id = c.client_id
-                    LEFT JOIN staff s ON n.created_by = s.staff_id
-                )
-                UNION ALL
-                (
-                    SELECT 
-                        sr.requested_at AS timestamp,
-                        CONCAT(
-                            'Service request: ', se.service_name,
-                            ' by client ', c.first_name, ' ', c.last_name
-                        ) AS description
-                    FROM service_requests sr
-                    JOIN services se ON sr.service_id = se.service_id
-                    JOIN clients c ON sr.client_id = c.client_id
-                    WHERE sr.request_status = 'pending'  -- Only show pending requests as recent activity
-                )
-                ORDER BY timestamp DESC
-                LIMIT :limit
-            ");
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-            $stmt->execute();
-            $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        return $activities;
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /**
-     * Get upcoming meetings AND approved service requests with preferred date/time
-     * Already perfect for your requirements – shows approved requests automatically
-     *
-     * @param int $limit
-     * @return array
-     */
     public function getUpcomingMeetingsAndRequests(int $limit = 10): array
     {
         $stmt = $this->pdo->prepare("
-            -- Confirmed / Scheduled Appointments
+            -- Appointments
             SELECT 
                 'appointment' AS type,
                 a.appointment_id AS id,
@@ -185,7 +214,7 @@ class Dashboard
 
             UNION ALL
 
-            -- Approved Service Requests with preferred date/time
+            -- Approved service requests
             SELECT 
                 'request' AS type,
                 sr.request_id AS id,
@@ -210,30 +239,6 @@ class Dashboard
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
         
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    // Old method (no longer used in dashboard) – kept for backward compatibility
-    public function getUpcomingAppointments(int $limit = 6): array
-    {
-        $stmt = $this->pdo->prepare("
-            SELECT 
-                a.appointment_date,
-                a.appointment_time,
-                CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-                a.appointment_type,
-                se.service_name
-            FROM appointments a
-            JOIN clients c ON a.client_id = c.client_id
-            LEFT JOIN services se ON a.service_id = se.service_id
-            WHERE a.appointment_date >= CURDATE()
-              AND a.appointment_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-              AND a.status IN ('scheduled', 'confirmed')
-            ORDER BY a.appointment_date ASC, a.appointment_time ASC
-            LIMIT :limit
-        ");
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

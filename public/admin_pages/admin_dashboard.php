@@ -216,36 +216,32 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
         </div>
 
         <div class="content-grid">
-            <!-- Recent Activity - Full descriptive messages -->
-            <div class="card">
-                <div class="card-title">Recent Activity</div>
-                
-                <?php if (empty($recentActivities)): ?>
-                    <p style="color:#64748b; text-align:center; padding:2rem 0;">
-                        No recent activity recorded yet.
-                    </p>
-                <?php else: ?>
-                    <?php foreach ($recentActivities as $activity): ?>
-                        <div class="activity-item">
-                            <div class="activity-avatar">
-                                <!-- You can replace this with real avatar later: <img src="..." alt=""> -->
-                            </div>
-                            <div class="activity-details">
-                                <div class="activity-description">
-                                    <?= htmlspecialchars($activity['description']) ?>
-                                    <?php if (!empty($activity['client_name'])): ?>
-                                        <strong><?= htmlspecialchars($activity['client_name']) ?></strong>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="activity-time">
-                                    <?= date('M d, Y g:i A', strtotime($activity['timestamp'])) ?>
-                                </div>
-                            </div>
+            <!-- Recent Activity -->
+<div class="card">
+    <div class="card-title">Recent Activity</div>
+    
+    <div id="recent-activity-list">
+        <?php if (empty($recentActivities)): ?>
+            <p style="color:#64748b; text-align:center; padding:2rem 0;">
+                No recent activity recorded yet.
+            </p>
+        <?php else: ?>
+            <?php foreach ($recentActivities as $activity): ?>
+                <div class="activity-item">
+                    <div class="activity-avatar"></div>
+                    <div class="activity-details">
+                        <div class="activity-description">
+                            <?= htmlspecialchars($activity['description']) ?>
                         </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-
+                        <div class="activity-time">
+                            <?= date('M d, Y g:i A', strtotime($activity['timestamp'])) ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+</div>
             <!-- Upcoming Meetings & Approved Requests -->
             <div class="card">
                 <div class="card-title">Upcoming Meetings & Approved Requests</div>
@@ -295,5 +291,47 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
     </div>
 </div>
 
+<script>
+function updateRecentActivity() {
+    fetch('get_recent_activities.php')  // adjust path if needed
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('recent-activity-list');
+            container.innerHTML = '';  // clear old
+
+            if (data.length === 0) {
+                container.innerHTML = '<p style="color:#64748b; text-align:center; padding:2rem 0;">No recent activity recorded yet.</p>';
+                return;
+            }
+
+            data.forEach(activity => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-avatar"></div>
+                    <div class="activity-details">
+                        <div class="activity-description">
+                            ${activity.description}
+                        </div>
+                        <div class="activity-time">
+                            ${new Date(activity.timestamp).toLocaleString('en-US', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                                hour: 'numeric', minute: '2-digit', hour12: true
+                            })}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        })
+        .catch(err => console.error('Error updating activity:', err));
+}
+
+// Initial load already from PHP, then poll every 15 seconds
+setInterval(updateRecentActivity, 1000);  // 15 seconds – adjust to 10000 for 10s
+
+// Optional: Update on page focus (if tab inactive)
+window.addEventListener('focus', updateRecentActivity);
+</script>
 </body>
 </html>
