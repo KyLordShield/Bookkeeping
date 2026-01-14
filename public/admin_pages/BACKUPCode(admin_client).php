@@ -2,9 +2,9 @@
 // admin_client_manage.php - FIXED: All modals/buttons/filters/search now work
 
 session_start();
-//Auth check:
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
-    header("Location: ../login_page.php");
+///Auth check:
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../login.php");
     exit();
 }
 // Paths (from public/admin_pages/ → ../../ → root)
