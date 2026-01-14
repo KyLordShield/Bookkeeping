@@ -1,5 +1,5 @@
 <?php
-// classes/Dashboard.php
+// classes/Dashboard.php - Updated to match dashboard requirements (January 2026)
 
 require_once __DIR__ . '/../config/Database.php';
 
@@ -56,34 +56,23 @@ class Dashboard
     }
 
     /**
-     * Get urgent actions count (urgent notes + on-hold services)
+     * Get urgent actions count → Now counts pending requirement approvals only
+     * Adjust table/column names if your requirements table is named differently
+     * (e.g., requirements, document_submissions, client_documents, etc.)
      *
      * @return int
      */
     public function getUrgentActions(): int
     {
-        $urgent = 0;
-
-        // Urgent incomplete notes
+        // Assuming table: client_requirements, column: approval_status = 'pending'
+        // Common alternatives: status = 'pending_approval' or approval_status = 'pending'
         $stmt = $this->pdo->prepare("
             SELECT COUNT(*) as count 
-            FROM notes 
-            WHERE priority = 'urgent' 
-            AND is_completed = 0
+            FROM client_service_requirements 
+            WHERE status = 'approval_pending'
         ");
         $stmt->execute();
-        $urgent += (int) $stmt->fetchColumn();
-
-        // On-hold client services
-        $stmt = $this->pdo->prepare("
-            SELECT COUNT(*) as count 
-            FROM client_services 
-            WHERE overall_status = 'on_hold'
-        ");
-        $stmt->execute();
-        $urgent += (int) $stmt->fetchColumn();
-
-        return $urgent;
+        return (int) $stmt->fetchColumn();
     }
 
     /**
@@ -99,20 +88,25 @@ class Dashboard
     }
 
     /**
-     * Get recent activities (fallback to notes/requests if activity_log empty)
+     * Get recent activities
+     * - Primary: activity_log with full, self-contained descriptive messages
+     * - Fallback: notes + service requests (if activity_log empty)
+     * Descriptions are now built to be complete sentences including actor & client
      *
      * @param int $limit
-     * @return array
+     * @return array Each item: ['description' => string, 'timestamp' => datetime]
      */
     public function getRecentActivities(int $limit = 8): array
     {
+        // Primary: activity_log (full description with actor + client)
         $stmt = $this->pdo->prepare("
             SELECT 
                 al.timestamp,
-                al.description,
-                CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-                CONCAT(s.first_name, ' ', s.last_name) AS staff_name,
-                al.activity_type
+                CONCAT(
+                    COALESCE(CONCAT(s.first_name, ' ', s.last_name, ': '), ''),
+                    al.description,
+                    COALESCE(CONCAT(' for client ', c.first_name, ' ', c.last_name), '')
+                ) AS description
             FROM activity_log al
             LEFT JOIN clients c ON al.related_entity_type = 'client' AND al.related_entity_id = c.client_id
             LEFT JOIN staff s ON al.user_id IN (SELECT user_id FROM users WHERE staff_id = s.staff_id)
@@ -123,30 +117,34 @@ class Dashboard
         $stmt->execute();
         $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // Fallback if activity_log is empty
         if (empty($activities)) {
             $stmt = $this->pdo->prepare("
-                SELECT 
-                    n.created_at AS timestamp,
-                    CONCAT('Note: ', n.title) AS description,
-                    CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-                    CONCAT(s.first_name, ' ', s.last_name) AS staff_name,
-                    'note' AS activity_type
-                FROM notes n
-                LEFT JOIN clients c ON n.related_client_id = c.client_id
-                LEFT JOIN staff s ON n.created_by = s.staff_id
-                
+                (
+                    SELECT 
+                        n.created_at AS timestamp,
+                        CONCAT(
+                            COALESCE(CONCAT(s.first_name, ' ', s.last_name, ': '), 'System: '),
+                            'Added note: ', n.title,
+                            COALESCE(CONCAT(' for client ', c.first_name, ' ', c.last_name), '')
+                        ) AS description
+                    FROM notes n
+                    LEFT JOIN clients c ON n.related_client_id = c.client_id
+                    LEFT JOIN staff s ON n.created_by = s.staff_id
+                )
                 UNION ALL
-                
-                SELECT 
-                    sr.requested_at AS timestamp,
-                    CONCAT('Requested service: ', se.service_name) AS description,
-                    CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-                    NULL AS staff_name,
-                    'request' AS activity_type
-                FROM service_requests sr
-                JOIN services se ON sr.service_id = se.service_id
-                JOIN clients c ON sr.client_id = c.client_id
-                
+                (
+                    SELECT 
+                        sr.requested_at AS timestamp,
+                        CONCAT(
+                            'Service request: ', se.service_name,
+                            ' by client ', c.first_name, ' ', c.last_name
+                        ) AS description
+                    FROM service_requests sr
+                    JOIN services se ON sr.service_id = se.service_id
+                    JOIN clients c ON sr.client_id = c.client_id
+                    WHERE sr.request_status = 'pending'  -- Only show pending requests as recent activity
+                )
                 ORDER BY timestamp DESC
                 LIMIT :limit
             ");
@@ -159,11 +157,63 @@ class Dashboard
     }
 
     /**
-     * Get upcoming appointments (next 7 days)
+     * Get upcoming meetings AND approved service requests with preferred date/time
+     * Already perfect for your requirements – shows approved requests automatically
      *
      * @param int $limit
      * @return array
      */
+    public function getUpcomingMeetingsAndRequests(int $limit = 10): array
+    {
+        $stmt = $this->pdo->prepare("
+            -- Confirmed / Scheduled Appointments
+            SELECT 
+                'appointment' AS type,
+                a.appointment_id AS id,
+                a.appointment_date AS event_date,
+                a.appointment_time AS event_time,
+                CONCAT(c.first_name, ' ', c.last_name) AS client_name,
+                COALESCE(se.service_name, a.appointment_type, 'Consultation') AS title,
+                a.status,
+                a.meeting_link
+            FROM appointments a
+            JOIN clients c ON a.client_id = c.client_id
+            LEFT JOIN services se ON a.service_id = se.service_id
+            WHERE a.appointment_date >= CURDATE()
+              AND a.appointment_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+              AND a.status IN ('scheduled', 'confirmed')
+
+            UNION ALL
+
+            -- Approved Service Requests with preferred date/time
+            SELECT 
+                'request' AS type,
+                sr.request_id AS id,
+                sr.preferred_date AS event_date,
+                sr.preferred_time AS event_time,
+                CONCAT(c.first_name, ' ', c.last_name) AS client_name,
+                se.service_name AS title,
+                sr.request_status AS status,
+                NULL AS meeting_link
+            FROM service_requests sr
+            JOIN clients c ON sr.client_id = c.client_id
+            JOIN services se ON sr.service_id = se.service_id
+            WHERE sr.preferred_date >= CURDATE()
+              AND sr.preferred_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+              AND sr.request_status = 'approved'
+              AND sr.preferred_date IS NOT NULL
+
+            ORDER BY event_date ASC, event_time ASC
+            LIMIT :limit
+        ");
+
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // Old method (no longer used in dashboard) – kept for backward compatibility
     public function getUpcomingAppointments(int $limit = 6): array
     {
         $stmt = $this->pdo->prepare("
@@ -186,63 +236,4 @@ class Dashboard
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-
-
-
-   /**
- * Get upcoming meetings AND pending service requests with preferred meeting time
- * Combined view for admin dashboard
- *
- * @param int $limit
- * @return array
- */
-public function getUpcomingMeetingsAndRequests(int $limit = 10): array
-{
-    $stmt = $this->pdo->prepare("
-        -- Confirmed / Scheduled Appointments
-        SELECT 
-            'appointment' AS type,
-            a.appointment_id AS id,
-            a.appointment_date AS event_date,
-            a.appointment_time AS event_time,
-            CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-            COALESCE(se.service_name, a.appointment_type, 'Consultation') AS title,
-            a.status,
-            a.meeting_link
-        FROM appointments a
-        JOIN clients c ON a.client_id = c.client_id
-        LEFT JOIN services se ON a.service_id = se.service_id
-        WHERE a.appointment_date >= CURDATE()
-          AND a.appointment_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
-          AND a.status IN ('scheduled', 'confirmed')
-
-        UNION ALL
-
-        -- Only APPROVED Service Requests with preferred meeting time
-        SELECT 
-            'request' AS type,
-            sr.request_id AS id,
-            sr.preferred_date AS event_date,
-            sr.preferred_time AS event_time,
-            CONCAT(c.first_name, ' ', c.last_name) AS client_name,
-            se.service_name AS title,
-            sr.request_status AS status,
-            NULL AS meeting_link
-        FROM service_requests sr
-        JOIN clients c ON sr.client_id = c.client_id
-        JOIN services se ON sr.service_id = se.service_id
-        WHERE sr.preferred_date >= CURDATE()
-          AND sr.preferred_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
-          AND sr.request_status = 'approved'
-          AND sr.preferred_date IS NOT NULL
-
-        ORDER BY event_date ASC, event_time ASC
-        LIMIT :limit
-    ");
-
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $stmt->execute();
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
 }

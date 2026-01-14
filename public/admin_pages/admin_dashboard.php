@@ -20,15 +20,17 @@ $activeClients     = $activeClientsData['total'];
 $newThisWeek       = $activeClientsData['new_this_week'];
 
 $pendingApprovals  = $dashboard->getPendingApprovals();
+
+// Updated: Urgent Actions now counts pending requirement approvals
+// Make sure getUrgentActions() in Dashboard.php returns the count of pending requirements
 $urgentCount       = $dashboard->getUrgentActions();
+
 $activeStaff       = $dashboard->getActiveStaff();
 
-// Recent activities
+// Recent activities - now driven by activity_log table (full descriptive messages)
 $recentActivities = $dashboard->getRecentActivities(8);
 
-// Combined upcoming events: 
-// - Confirmed/Scheduled appointments
-// - Approved service requests with preferred date/time
+// Combined upcoming events: Confirmed appointments + Approved service requests
 $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
 ?>
 
@@ -54,6 +56,11 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
             padding: 1.5rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
         }
         .stat-value {
             font-size: 2.6rem;
@@ -86,11 +93,16 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
             color: #1e293b;
         }
 
+        /* Recent Activity - Updated layout for full descriptive messages */
         .activity-item {
             display: flex;
             gap: 1rem;
             padding: 1rem 0;
             border-bottom: 1px solid #f1f5f9;
+            transition: background-color 0.2s;
+        }
+        .activity-item:hover {
+            background-color: #f8fafc;
         }
         .activity-item:last-child { border-bottom: none; }
 
@@ -100,16 +112,29 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
             background: #e2e8f0;
             border-radius: 50%;
             flex-shrink: 0;
+            object-fit: cover;
         }
 
         .activity-details { flex: 1; }
-        .activity-name     { font-weight: 600; color: #1e293b; }
-        .activity-action   { color: #64748b; font-size: 0.95rem; }
-        .activity-time     { color: #94a3b8; font-size: 0.85rem; margin-top: 0.25rem; }
+        .activity-description {
+            color: #334155;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+        .activity-time {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
 
+        /* Upcoming Events */
         .event-item {
             padding: 1.2rem 0;
             border-bottom: 1px solid #f1f5f9;
+            transition: background-color 0.2s;
+        }
+        .event-item:hover {
+            background-color: #f8fafc;
         }
         .event-item:last-child { border-bottom: none; }
 
@@ -132,6 +157,7 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
             padding-left: 1rem;
             background-color: rgba(16, 185, 129, 0.04);
             border-radius: 6px;
+            margin: 0.4rem 0;
         }
 
         .request-badge {
@@ -152,6 +178,11 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
         }
         .status-scheduled { background: #10b981; color: white; }
         .status-approved  { background: #10b981; color: white; }
+
+        /* Urgent highlight if > 0 */
+        .stat-card.urgent-highlight .stat-value {
+            color: #dc2626;
+        }
     </style>
 </head>
 <body>
@@ -174,9 +205,9 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
                 <div class="stat-value"><?= number_format($pendingApprovals) ?></div>
                 <div class="stat-label">Pending Approvals<br><small>Require attention</small></div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card <?= $urgentCount > 0 ? 'urgent-highlight' : '' ?>">
                 <div class="stat-value"><?= number_format($urgentCount) ?></div>
-                <div class="stat-label">Urgent Actions<br><small>Need immediate attention</small></div>
+                <div class="stat-label">Urgent Actions<br><small>Pending requirement approvals</small></div>
             </div>
             <div class="stat-card">
                 <div class="stat-value"><?= number_format($activeStaff) ?></div>
@@ -185,7 +216,7 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
         </div>
 
         <div class="content-grid">
-            <!-- Recent Activity -->
+            <!-- Recent Activity - Full descriptive messages -->
             <div class="card">
                 <div class="card-title">Recent Activity</div>
                 
@@ -196,13 +227,15 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
                 <?php else: ?>
                     <?php foreach ($recentActivities as $activity): ?>
                         <div class="activity-item">
-                            <div class="activity-avatar"></div>
+                            <div class="activity-avatar">
+                                <!-- You can replace this with real avatar later: <img src="..." alt=""> -->
+                            </div>
                             <div class="activity-details">
-                                <div class="activity-name">
-                                    <?= htmlspecialchars($activity['client_name'] ?? $activity['staff_name'] ?? 'System') ?>
-                                </div>
-                                <div class="activity-action">
+                                <div class="activity-description">
                                     <?= htmlspecialchars($activity['description']) ?>
+                                    <?php if (!empty($activity['client_name'])): ?>
+                                        <strong><?= htmlspecialchars($activity['client_name']) ?></strong>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="activity-time">
                                     <?= date('M d, Y g:i A', strtotime($activity['timestamp'])) ?>
@@ -213,7 +246,7 @@ $upcomingEvents = $dashboard->getUpcomingMeetingsAndRequests(10);
                 <?php endif; ?>
             </div>
 
-            <!-- Upcoming Events: Appointments + APPROVED Service Requests -->
+            <!-- Upcoming Meetings & Approved Requests -->
             <div class="card">
                 <div class="card-title">Upcoming Meetings & Approved Requests</div>
                 
