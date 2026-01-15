@@ -602,6 +602,45 @@ if ($viewType === 'client') {
             color: #dc3545;
         }
 
+        .alert-icon.warning {
+            color: #ffc107;
+        }
+
+        .alert-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        .alert-buttons button {
+            flex: 1;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .btn-confirm {
+            background: #8B0000;
+            color: white;
+        }
+
+        .btn-confirm:hover {
+            background: #B22222;
+        }
+
+        .btn-cancel-alert {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-cancel-alert:hover {
+            background: #5a6268;
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -728,7 +767,7 @@ if ($viewType === 'client') {
                                                         <button class="btn-action btn-toggle" onclick="toggleStatus(<?= $user['user_id'] ?>, '<?= $user['status'] ?>')">
                                                             <?= $user['status'] === 'active' ? 'Disable' : 'Enable' ?>
                                                         </button>
-                                                        <button class="btn-action btn-delete" onclick="deleteUser(<?= $user['user_id'] ?>)">Delete</button>
+                                        
                                                     </div>
                                                 </td>
                                             </tr>
@@ -789,7 +828,7 @@ if ($viewType === 'client') {
                                                         <button class="btn-action btn-toggle" onclick="toggleStatus(<?= $user['user_id'] ?>, '<?= $user['status'] ?>')">
                                                             <?= $user['status'] === 'active' ? 'Disable' : 'Enable' ?>
                                                         </button>
-                                                        <button class="btn-action btn-delete" onclick="deleteUser(<?= $user['user_id'] ?>)">Delete</button>
+                                                    
                                                     </div>
                                                 </td>
                                             </tr>
@@ -965,13 +1004,16 @@ if ($viewType === 'client') {
                     <div class="alert-icon" id="alertIcon"></div>
                     <h3 id="alertTitle"></h3>
                     <p id="alertMessage"></p>
-                    <button class="btn-submit" onclick="closeAlert()" style="margin-top: 20px;">OK</button>
+                    <div id="alertButtons"></div>
                 </div>
             </div>
         </main>
     </div>
 
     <script>
+        // Store pending action for confirmation
+        let pendingAction = null;
+
         function openCreateStaffModal() {
             document.getElementById('createStaffModal').classList.add('show');
         }
@@ -1008,43 +1050,93 @@ if ($viewType === 'client') {
         }
 
         function showAlert(type, title, message) {
+            const iconMap = {
+                'success': '✓',
+                'error': '✕',
+                'warning': '⚠'
+            };
+            
             document.getElementById('alertIcon').className = 'alert-icon ' + type;
-            document.getElementById('alertIcon').textContent = type === 'success' ? '✓' : '✕';
+            document.getElementById('alertIcon').textContent = iconMap[type] || '!';
             document.getElementById('alertTitle').textContent = title;
             document.getElementById('alertMessage').textContent = message;
+            document.getElementById('alertButtons').innerHTML = '<button class="btn-submit" onclick="closeAlert()" style="margin-top: 20px; width: 100%;">OK</button>';
             document.getElementById('alertModal').classList.add('show');
+        }
+
+        function showConfirmAlert(type, title, message, onConfirm) {
+            const iconMap = {
+                'success': '✓',
+                'error': '✕',
+                'warning': '⚠'
+            };
+            
+            document.getElementById('alertIcon').className = 'alert-icon ' + type;
+            document.getElementById('alertIcon').textContent = iconMap[type] || '!';
+            document.getElementById('alertTitle').textContent = title;
+            document.getElementById('alertMessage').textContent = message;
+            document.getElementById('alertButtons').innerHTML = `
+                <div class="alert-buttons">
+                    <button class="btn-confirm" onclick="confirmAction()">Confirm</button>
+                    <button class="btn-cancel-alert" onclick="closeAlert()">Cancel</button>
+                </div>
+            `;
+            
+            pendingAction = onConfirm;
+            document.getElementById('alertModal').classList.add('show');
+        }
+
+        function confirmAction() {
+            if (pendingAction) {
+                pendingAction();
+                pendingAction = null;
+            }
+            closeAlert();
         }
 
         function closeAlert() {
             document.getElementById('alertModal').classList.remove('show');
+            pendingAction = null;
         }
 
         function toggleStatus(userId, currentStatus) {
             const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-            if (confirm(`Are you sure you want to ${newStatus === 'active' ? 'enable' : 'disable'} this user account?`)) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="toggle_status">
-                    <input type="hidden" name="user_id" value="${userId}">
-                    <input type="hidden" name="new_status" value="${newStatus}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
+            const actionText = newStatus === 'active' ? 'enable' : 'disable';
+            
+            showConfirmAlert(
+                'warning',
+                actionText.charAt(0).toUpperCase() + actionText.slice(1) + ' User Account?',
+                'Are you sure you want to ' + actionText + ' this user account?',
+                function() {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.innerHTML = `
+                        <input type="hidden" name="action" value="toggle_status">
+                        <input type="hidden" name="user_id" value="${userId}">
+                        <input type="hidden" name="new_status" value="${newStatus}">
+                    `;
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            );
         }
 
         function deleteUser(userId) {
-            if (confirm('Are you sure you want to DELETE this user account? This action cannot be undone!')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="delete_user">
-                    <input type="hidden" name="user_id" value="${userId}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
+            showConfirmAlert(
+                'error',
+                'Delete User Account?',
+                'Are you sure you want to DELETE this user account? This action cannot be undone!',
+                function() {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.innerHTML = `
+                        <input type="hidden" name="action" value="delete_user">
+                        <input type="hidden" name="user_id" value="${userId}">
+                    `;
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            );
         }
 
         // Show PHP alerts
@@ -1058,7 +1150,7 @@ if ($viewType === 'client') {
 
         // Close modals on outside click
         window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
+            if (event.target.classList.contains('modal') || event.target.classList.contains('alert-modal')) {
                 event.target.classList.remove('show');
             }
         }
