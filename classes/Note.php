@@ -1,5 +1,5 @@
 <?php
-// classes/Note.php
+// classes/Note.php - Fixed to handle optional staff_id
 
 require_once __DIR__ . '/../config/Database.php';
 
@@ -21,10 +21,34 @@ class Note
      */
     public function create(array $data): int
     {
-        $required = ['created_by', 'title', 'content'];
+        // Only title and content are truly required
+        $required = ['title', 'content'];
         foreach ($required as $field) {
             if (empty($data[$field])) {
                 throw new Exception("Field '$field' is required.");
+            }
+        }
+
+        // Handle created_by: validate it's a real staff_id or set to null
+        $createdBy = null;
+        if (!empty($data['created_by'])) {
+            // Check if it's a valid staff_id
+            $stmt = $this->pdo->prepare("SELECT staff_id FROM staff WHERE staff_id = ?");
+            $stmt->execute([$data['created_by']]);
+            
+            if ($stmt->fetchColumn()) {
+                // It's a valid staff_id
+                $createdBy = $data['created_by'];
+            } else {
+                // Try to find staff_id from users table
+                $stmt = $this->pdo->prepare("SELECT staff_id FROM users WHERE user_id = ?");
+                $stmt->execute([$data['created_by']]);
+                $staffId = $stmt->fetchColumn();
+                
+                if ($staffId) {
+                    $createdBy = $staffId;
+                }
+                // If still null, it will remain null (which is allowed)
             }
         }
 
@@ -40,7 +64,7 @@ class Note
         $stmt = $this->pdo->prepare($sql);
 
         $stmt->execute([
-            ':created_by'        => $data['created_by'],
+            ':created_by'        => $createdBy,  // Now properly validated or null
             ':note_type'         => $data['note_type'] ?? 'general',
             ':title'             => trim($data['title']),
             ':content'           => trim($data['content']),
@@ -66,8 +90,8 @@ class Note
             SELECT 
                 n.*,
                 CONCAT(s.first_name, ' ', s.last_name) AS created_by_name,
-                c.first_name AS client_first_name,
-                c.last_name AS client_last_name
+                c.first_name AS client_first,
+                c.last_name AS client_last
             FROM notes n
             LEFT JOIN staff s ON n.created_by = s.staff_id
             LEFT JOIN clients c ON n.related_client_id = c.client_id

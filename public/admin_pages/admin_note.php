@@ -1,7 +1,8 @@
 <?php
-// admin_note.php - Enhanced Admin Notes Management with SweetAlert2
+// admin_note.php - Simplified Admin Creator
 session_start();
-//Auth check:
+
+// Auth check
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
@@ -12,6 +13,41 @@ require_once __DIR__ . '/../../classes/Note.php';
 
 $noteObj = new Note();
 $pdo = Database::getInstance()->getConnection();
+
+// Ensure we have a valid staff_id for admin
+// First, try to get from session
+$adminStaffId = $_SESSION['staff_id'] ?? null;
+
+// If not in session, try to get from database
+if (!$adminStaffId) {
+    $stmt = $pdo->prepare("SELECT staff_id FROM users WHERE user_id = ? AND is_admin = 1");
+    $stmt->execute([$_SESSION['user_id']]);
+    $adminStaffId = $stmt->fetchColumn();
+    
+    if ($adminStaffId) {
+        $_SESSION['staff_id'] = $adminStaffId;
+    }
+}
+
+// If still no staff_id, create/get a default "Admin" staff entry
+if (!$adminStaffId) {
+    // Check if "System Admin" staff exists
+    $stmt = $pdo->prepare("SELECT staff_id FROM staff WHERE email = 'admin@system.local' LIMIT 1");
+    $stmt->execute();
+    $adminStaffId = $stmt->fetchColumn();
+    
+    // If not, create it
+    if (!$adminStaffId) {
+        $stmt = $pdo->prepare("
+            INSERT INTO staff (first_name, last_name, email, position) 
+            VALUES ('System', 'Admin', 'admin@system.local', 'Administrator')
+        ");
+        $stmt->execute();
+        $adminStaffId = $pdo->lastInsertId();
+    }
+    
+    $_SESSION['staff_id'] = $adminStaffId;
+}
 
 // Handle POST actions
 $flash = null;
@@ -31,8 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
 
             if ($action === 'add_note') {
-                $data['created_by'] = $_SESSION['staff_id'] ?? null;
-                if (!$data['created_by']) throw new Exception("Staff ID not found in session");
+                // Always use the admin staff_id
+                $data['created_by'] = $adminStaffId;
+                
                 $noteObj->create($data);
                 $flash = ['type' => 'success', 'message' => 'Note created successfully!'];
             } else if ($action === 'edit_note' && !empty($_POST['note_id'])) {
@@ -216,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="note-footer">
                             <div class="note-meta">
-                                <small>By: <?= htmlspecialchars($note['created_by_name'] ?? '—') ?></small>
+                                <small>By: <?= htmlspecialchars($note['created_by_name'] ?? 'Admin') ?></small>
                                 <?php if (!empty($note['client_first'])): ?>
                                     <small> • Client: <?= htmlspecialchars($note['client_first'].' '.$note['client_last']) ?></small>
                                 <?php endif; ?>

@@ -2,7 +2,7 @@
 session_start();
 //Auth check:
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../login.php");
+    header("Location: ../login_page.php");
     exit();
 }
 

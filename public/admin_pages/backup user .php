@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../config/Database.php';
 
 //Auth check:
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../login.php");
+    header("Location: ../login_page.php");
     exit();
 }
 

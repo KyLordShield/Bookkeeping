@@ -8,7 +8,7 @@ error_log("Admin Approval Page - Session: " . print_r($_SESSION, true));
 
 //Auth check:
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../login.php");
+    header("Location: ../login_page.php");
     exit();
 }
 
