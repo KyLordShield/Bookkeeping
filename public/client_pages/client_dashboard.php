@@ -1,5 +1,5 @@
 <?php
-// client_dashboard.php - Fixed to use static Client methods
+// client_dashboard.php - Updated to show only in-progress services
 session_start();
 
 // Redirect if not logged in as client
@@ -13,26 +13,30 @@ require_once __DIR__ . '/../../classes/Client.php';
 
 $clientId = (int)$_SESSION['client_id'];
 
-// Get client full name (using existing static method)
+// Get client full name
 $client = Client::findById($clientId);
 $clientName = $client 
     ? htmlspecialchars($client['first_name'] . ' ' . $client['last_name'])
     : 'Client';
 
-// Get client's services with progress
-// Note: You'll need to make getClientServices() static too - see fix below
-$services = Client::getClientServices($clientId);
+// Get ALL client's services for statistics
+$allServices = Client::getClientServices($clientId);
 
-// Calculate totals
-$totalServices = count($services);
+// Filter only IN-PROGRESS services for display
+$inProgressServices = array_filter($allServices, function($s) {
+    return $s['overall_status'] === 'in_progress';
+});
+
+// Calculate totals from ALL services
+$totalServices = count($allServices);
 $inProgress = 0;
 $completed  = 0;
-foreach ($services as $s) {
+foreach ($allServices as $s) {
     if ($s['overall_status'] === 'in_progress') $inProgress++;
     if ($s['overall_status'] === 'completed')   $completed++;
 }
 
-// Get upcoming APPROVED service requests (only preferred date/time from approved requests)
+// Get upcoming APPROVED service requests
 $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
 ?>
 
@@ -69,18 +73,36 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
         .stat-card {
             background: white;
             border-radius: 12px;
-            padding: 1rem 0.5rem;
+            padding: 1.8rem 1.5rem;
             box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-            text-align: center;
+            border-left: 4px solid #e2e8f0;
+            transition: all 0.3s ease;
         }
-        .stat-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
+        .stat-card:hover {
+            box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+            transform: translateY(-2px);
+        }
+        .stat-card.primary {
+            border-left-color: #3b82f6;
+        }
+        .stat-card.warning {
+            border-left-color: #f59e0b;
+        }
+        .stat-card.success {
+            border-left-color: #10b981;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
         }
         .stat-label {
-            font-size: 1.15rem;
-            font-weight: 600;
-            color: #1e293b;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .content-grid {
@@ -119,17 +141,9 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
         .service-status {
             margin: 0.8rem 0;
         }
-        .status-progress {
+        .status-in_progress {
             background: #fef3c7;
             color: #d97706;
-            padding: 6px 12px;
-            border-radius: 14px;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-        .status-completed {
-            background: #d1fae5;
-            color: #065f46;
             padding: 6px 12px;
             border-radius: 14px;
             font-weight: 600;
@@ -162,6 +176,15 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             border-radius: 12px;
             margin-left: 0.7rem;
         }
+
+        @media (max-width: 968px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -175,17 +198,17 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             </div>
 
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon">🛒</div>
-                    <div class="stat-label">Total Services Availed<br><?= $totalServices ?></div>
+                <div class="stat-card primary">
+                    <div class="stat-value"><?= $totalServices ?></div>
+                    <div class="stat-label">Total Services Availed</div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⚙️</div>
-                    <div class="stat-label">In Progress<br><?= $inProgress ?></div>
+                <div class="stat-card warning">
+                    <div class="stat-value"><?= $inProgress ?></div>
+                    <div class="stat-label">In Progress</div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">✓</div>
-                    <div class="stat-label">Completed<br><?= $completed ?></div>
+                <div class="stat-card success">
+                    <div class="stat-value"><?= $completed ?></div>
+                    <div class="stat-label">Completed</div>
                 </div>
             </div>
 
@@ -193,20 +216,20 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
                 <div class="card">
                     <div class="card-title">Your Current Services</div>
 
-                    <?php if (empty($services)): ?>
+                    <?php if (empty($inProgressServices)): ?>
                         <p style="color:#64748b; text-align:center; padding:3rem 0;">
-                            You haven't started any services yet.
+                            You have no services currently in progress.
                         </p>
                     <?php else: ?>
-                        <?php foreach ($services as $service): ?>
+                        <?php foreach ($inProgressServices as $service): ?>
                             <div class="service-item">
                                 <div class="service-name"><?= htmlspecialchars($service['service_name']) ?></div>
                                 <div class="service-dates">
                                     Started: <?= $service['start_date'] ? date('M d, Y', strtotime($service['start_date'])) : 'N/A' ?>
                                 </div>
                                 <div class="service-status">
-                                    <span class="status-<?= htmlspecialchars($service['overall_status']) ?>">
-                                        <?= ucfirst($service['overall_status']) ?>
+                                    <span class="status-in_progress">
+                                        In Progress
                                     </span>
                                     <?php if (!empty($service['total_steps']) && $service['total_steps'] > 0): ?>
                                         <span style="color:#64748b; font-size:0.9rem; margin-left:0.8rem;">
