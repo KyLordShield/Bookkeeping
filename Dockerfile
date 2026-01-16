@@ -21,27 +21,17 @@ RUN apt-get update && apt-get install -y \
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Set Apache document root to /var/www/html/public
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
-    /etc/apache2/sites-available/*.conf \
-    /etc/apache2/apache2.conf
-
 # Add ServerName to suppress warning
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
-# Copy .htaccess to public folder for Apache to use
-RUN mkdir -p /var/www/html/public
+# Enable .htaccess override in Apache config
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
 # Set working directory
 WORKDIR /var/www/html
 
 # Copy source code
 COPY . .
-
-# Copy root .htaccess to public folder as well
-RUN cp .htaccess public/.htaccess 2>/dev/null || true
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-scripts

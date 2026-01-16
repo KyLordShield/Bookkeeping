@@ -1,13 +1,18 @@
 RewriteEngine On
 
+# Allow static files (CSS, JS, images) to load directly
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Allow directories to be accessed
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
 # Security headers
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
     Header set X-Frame-Options "SAMEORIGIN"
     Header set X-XSS-Protection "1; mode=block"
 </IfModule>
-
-# Block access to parent directories
-RewriteRule ^\.\./ - [F,L]
 
 Options -Indexes

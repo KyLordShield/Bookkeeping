@@ -4,9 +4,16 @@ RewriteEngine On
 RewriteCond %{REQUEST_URI} ^/$
 RewriteRule ^$ /public/ [R=302,L]
 
-# Security: Block sensitive files
+# Pass everything else through (let public/.htaccess handle it)
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteRule ^(.*)$ /public/$1 [L]
+
+# Block sensitive files globally
 <FilesMatch "\.(env|json|ini|log|sql|bak)$">
     Require all denied
 </FilesMatch>
+
+# Block config and classes folders
+RewriteRule ^(config|classes)/ - [F,L]
 
 Options -Indexes
