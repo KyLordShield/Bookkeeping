@@ -13,7 +13,6 @@ RewriteRule ^public/(.*)$ public/index.php [QSA,L]
 # ================================
 # 2️⃣ BLOCK SENSITIVE FILES
 # ================================
-# Protect config, classes, and credentials
 <FilesMatch "\.(env|json|ini|log|sql|bak)$">
     Require all denied
 </FilesMatch>
@@ -22,14 +21,9 @@ RewriteRule ^public/(.*)$ public/index.php [QSA,L]
     Require all denied
 </Files>
 
-# Prevent access to sensitive directories
-<Directory "config">
-    Require all denied
-</Directory>
-
-<Directory "classes">
-    Require all denied
-</Directory>
+# Block access to config and classes folders
+RewriteRule ^config/ - [F,L]
+RewriteRule ^classes/ - [F,L]
 
 # ================================
 # 3️⃣ PREVENT DIRECTORY LISTING
