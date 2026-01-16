@@ -1,44 +1,12 @@
-# ====================================
-# 0️⃣ Redirect root requests to /public
-# ====================================
 RewriteEngine On
-RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /(index\.php)?\ HTTP/
+
+# Redirect root to /public
+RewriteCond %{REQUEST_URI} ^/$
 RewriteRule ^$ /public/ [R=302,L]
 
-# ====================================
-# 1️⃣ ROUTING (Front Controller)
-# ====================================
-# Only rewrite requests that go to /public or non-existing files
-RewriteCond %{REQUEST_URI} ^/public/ [OR]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^public/(.*)$ public/index.php [QSA,L]
-
-# ====================================
-# 2️⃣ BLOCK SENSITIVE FILES
-# ====================================
+# Security: Block sensitive files
 <FilesMatch "\.(env|json|ini|log|sql|bak)$">
     Require all denied
 </FilesMatch>
 
-<Files "google-credentials.json">
-    Require all denied
-</Files>
-
-# Block access to config and classes folders
-RewriteRule ^config/ - [F,L]
-RewriteRule ^classes/ - [F,L]
-
-# ====================================
-# 3️⃣ PREVENT DIRECTORY LISTING
-# ====================================
 Options -Indexes
-
-# ====================================
-# 4️⃣ SECURITY HEADERS
-# ====================================
-<IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-</IfModule>
