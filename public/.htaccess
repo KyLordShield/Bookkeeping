@@ -4,7 +4,6 @@ RewriteEngine On
 # ================================
 # 1️⃣ ROUTING (Front Controller)
 # ================================
-# All requests go to index.php unless file or directory exists
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
@@ -16,7 +15,6 @@ RewriteRule ^ index.php [QSA,L]
     Require all denied
 </FilesMatch>
 
-# Explicitly block Google credentials
 <Files "google-credentials.json">
     Require all denied
 </Files>
@@ -27,7 +25,10 @@ RewriteRule ^ index.php [QSA,L]
 Options -Indexes
 
 # ================================
-# 4️⃣ SECURITY HEADERS (Optional)
+# 4️⃣ SECURITY HEADERS
 # ================================
-Header always set X-Content-Type-Options "nosniff"
-Header always set X-Frame-Op
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>

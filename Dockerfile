@@ -27,12 +27,13 @@ RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
     /etc/apache2/sites-available/*.conf \
     /etc/apache2/apache2.conf
 
+# Set working directory
 WORKDIR /var/www/html
 
-# Copy source
+# Copy source code
 COPY . .
 
-# IMPORTANT: Ignore scripts during build
+# Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # Fix permissions
