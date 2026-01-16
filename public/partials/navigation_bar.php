@@ -23,16 +23,23 @@
         Services
     </a>
 
+    <button
+    type="button"
+    id="openProfileModal"
+    class="nav-button profile-btn"
+>
+    Profile
+</button>
+
+
+        <!-- LOGOUT -->
     <form method="POST" action="../logout.php" class="logout-form">
-        <button type="submit" class="nav-button logout-btn">
-            Logout
+        <button type="submit" class="logout-btn" title="Logout">
+            <img src="../assets/images/logout.png" alt="Logout">
         </button>
     </form>
 
-    <!-- Profile button – stays inside sidebar, pushed to bottom -->
-    <button type="button" class="prof-btn" id="openProfileModal">
-        Profile
-    </button>
+    
 </div>
 
 <!-- Profile Modal – MOVED OUTSIDE the sidebar (this fixes the overlay/blank issue) -->

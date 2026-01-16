@@ -198,7 +198,7 @@ if (isset($_GET['edit_staff'])) {
                 <div class="page-subtitle">Monitor staff performance and workload</div>
             </div>
 
-            <button class="add-staff-btn" onclick="openAddEditModal('add')">+ Add New Staff</button>
+           <!-- <button class="add-staff-btn" onclick="openAddEditModal('add')">+ Add New Staff</button> -->
 
             <div class="staff-grid">
                 <?php if (empty($allStaff)): ?>

@@ -261,7 +261,7 @@ function computeProgressState(array $service): array {
     <?php include '../partials/navigation_bar.php'; ?>
 
     <div class="main-content">
-        <h1>My Service Progress</h1>
+        <h1 class="header"> My Service Progress</h1>
 
         <div class="progress-container">
 

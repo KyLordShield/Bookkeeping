@@ -100,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 Client::update($client_id, $data);
 
                 // Update service if client_service_id and new_service_id are provided
+                $serviceUpdated = false;
                 if (isset($_POST['client_service_id']) && isset($_POST['new_service_id'])) {
                     $client_service_id = (int)$_POST['client_service_id'];
                     $new_service_id = (int)$_POST['new_service_id'];
@@ -114,10 +115,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             AND overall_status = 'pending'
                         ");
                         $stmt->execute([$new_service_id, $client_service_id]);
+                        $serviceUpdated = $stmt->rowCount() > 0;
                     }
                 }
 
-                echo json_encode(['success' => true]);
+                echo json_encode([
+                    'success' => true,
+                    'service_updated' => $serviceUpdated
+                ]);
                 break;
 
             case 'create_user':
@@ -258,6 +263,13 @@ foreach ($clients as $client) {
         .cm-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
         .cm-modal.active { display: flex; }
         .cm-modal-content { background: white; width: 90%; max-width: 700px; border-radius: 8px; overflow: hidden; }
+        
+        /* Wider modal for service requests */
+        #serviceRequestModal .cm-modal-content {
+            max-width: 1200px;
+            width: 95%;
+        }
+        
         .cm-modal-header { padding: 15px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
         .cm-close-modal { font-size: 28px; cursor: pointer; }
         .cm-modal-body { padding: 20px; max-height: 70vh; overflow-y: auto; }
@@ -541,7 +553,7 @@ foreach ($clients as $client) {
                 <h2>Pending Service Requests</h2>
                 <button class="cm-close-modal" onclick="closeServiceRequestModal()">×</button>
             </div>
-            <div class="cm-modal-body" style="max-height:60vh;overflow-y:auto;">
+            <div class="cm-modal-body" style="max-height:70vh;overflow-y:auto;">
                 <div class="cm-service-list">
                     <div class="cm-service-list-item cm-service-list-header">
                         <div>Client</div><div>Email</div><div>Phone</div><div>Service</div>
@@ -763,8 +775,8 @@ foreach ($clients as $client) {
                     Toast.fire({ icon: 'success', title: 'Service added successfully!' });
                     closeServiceSelectionModal();
                     setTimeout(() => {
-                            location.reload();
-                        }, 3600); // wait for toast to finish
+                        location.reload();
+                    }, 3600);
                 } else {
                     Swal.fire('Error', data.message || 'Failed to add service', 'error');
                 }
@@ -911,15 +923,37 @@ foreach ($clients as $client) {
                 const data = await res.json();
 
                 if (data.success) {
-                    Toast.fire({
-                        icon: 'success',
-                        title: isEdit ? 'Client updated!' : 'Client created!'
-                    });
-
                     if (!isEdit) {
+                        Toast.fire({
+                            icon: 'success',
+                            title: 'Client created!'
+                        });
                         closeClientModal();
                         openUserModal(data.client_id);
                     } else {
+                        // Check if service was updated
+                        if (data.service_updated) {
+                            Toast.fire({
+                                icon: 'success',
+                                title: 'Client & service updated!'
+                            });
+                        } else {
+                            // Service wasn't updated (either no pending service or not changed)
+                            const hasPendingService = document.getElementById('editPendingServicesDiv').style.display !== 'none';
+                            
+                            if (hasPendingService) {
+                                Toast.fire({
+                                    icon: 'info',
+                                    title: 'Client updated. Only pending services can be modified.',
+                                    timer: 4000
+                                });
+                            } else {
+                                Toast.fire({
+                                    icon: 'success',
+                                    title: 'Client updated!'
+                                });
+                            }
+                        }
                         closeClientModal();
                         setTimeout(() => location.reload(), 3600);
                     }

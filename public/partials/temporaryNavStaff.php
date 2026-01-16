@@ -24,9 +24,10 @@
         Profile
     </a>
 
+        <!-- LOGOUT -->
     <form method="POST" action="../logout.php" class="logout-form">
-        <button type="submit" class="nav-button logout-btn">
-            Logout
+        <button type="submit" class="logout-btn" title="Logout">
+            <img src="../assets/images/logout.png" alt="Logout">
         </button>
     </form>
 </div>

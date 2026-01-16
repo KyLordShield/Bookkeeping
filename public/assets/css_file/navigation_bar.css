@@ -94,40 +94,53 @@
     background: #631715 !important;
 }
 
-/* LOGOUT BUTTON */
+/* Remove form default spacing */
 .logout-form {
-    margin-top: auto;
+    margin: 0;
+    padding: 0;
+    margin-top: auto; /* 👈 magic line */
 }
 
+/* Make logout button match nav buttons */
 .logout-btn {
-    background: #8B0000 !important;
-    color: #fff !important;
+    background: transparent !important;
+    border: none;
+    box-shadow: none;
+    padding: 2px 6px;
+    width: 100%;
+    
+    display: flex;
+    align-items: center;
+    justify-content: flex-start; /* 👈 move left */
+    
+    cursor: pointer;
 }
 
-.logout-btn:hover {
-    background: #B22222 !important;
+/* Icon size */
+.logout-btn img {
+    width: 42px;
+    height: 42px;
 }
+
+/* Hover effect like other nav buttons */
+.logout-btn:hover {
+    background-color: #2c2f33; /* same as sidebar hover */
+}
+
+/* Remove weird focus/active white background */
+.logout-btn:focus,
+.logout-btn:active {
+    outline: none;
+    background-color: transparent;
+}
+
 
 /* ──────────────────────────────────────────────── */
 /*          PROFILE BUTTON & MODAL ONLY             */
 /* ──────────────────────────────────────────────── */
 
 /* Profile button (placed at bottom) */
-.prof-btn {
-    margin-top: auto;
-    background: #4a6bff;
-    color: white;
-    border: none;
-    padding: 12px;
-    font-size: 15px;
-    cursor: pointer;
-    border-radius: 6px;
-    margin-top: 20px;
-}
 
-.prof-btn:hover {
-    background: #3a5ae0;
-}
 
 /* Modal container */
 .prof-modal {
