@@ -1,0 +1,33 @@
+# Enable Rewrite Engine
+RewriteEngine On
+
+# ================================
+# 1️⃣ ROUTING (Front Controller)
+# ================================
+# All requests go to index.php unless file or directory exists
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+# ================================
+# 2️⃣ BLOCK SENSITIVE FILES
+# ================================
+<FilesMatch "\.(env|json|ini|log|sql|bak)$">
+    Require all denied
+</FilesMatch>
+
+# Explicitly block Google credentials
+<Files "google-credentials.json">
+    Require all denied
+</Files>
+
+# ================================
+# 3️⃣ PREVENT DIRECTORY LISTING
+# ================================
+Options -Indexes
+
+# ================================
+# 4️⃣ SECURITY HEADERS (Optional)
+# ================================
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Op
