@@ -1,0 +1,46 @@
+# Enable Rewrite Engine
+RewriteEngine On
+
+# ================================
+# 1️⃣ ROUTING (Front Controller)
+# ================================
+# Only rewrite requests that go to /public or non-existing files
+RewriteCond %{REQUEST_URI} ^/public/ [OR]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^public/(.*)$ public/index.php [QSA,L]
+
+# ================================
+# 2️⃣ BLOCK SENSITIVE FILES
+# ================================
+# Protect config, classes, and credentials
+<FilesMatch "\.(env|json|ini|log|sql|bak)$">
+    Require all denied
+</FilesMatch>
+
+<Files "google-credentials.json">
+    Require all denied
+</Files>
+
+# Prevent access to sensitive directories
+<Directory "config">
+    Require all denied
+</Directory>
+
+<Directory "classes">
+    Require all denied
+</Directory>
+
+# ================================
+# 3️⃣ PREVENT DIRECTORY LISTING
+# ================================
+Options -Indexes
+
+# ================================
+# 4️⃣ SECURITY HEADERS
+# ================================
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
