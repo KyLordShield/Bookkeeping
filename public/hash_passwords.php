@@ -5,7 +5,7 @@
  * Ignores already-hashed passwords
  */
 
-require_once 'Database.php'; // Use your existing Database singleton
+require_once '../config/Database.php'; // Use your existing Database singleton
 
 try {
     $pdo = Database::getInstance()->getConnection();
