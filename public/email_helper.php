@@ -16,16 +16,14 @@ function sendResetCodeEmail(
     $mail = new PHPMailer(true);
 
     try {
-        // === Gmail SMTP Configuration ===
+        // === SENDGRID SMTP Configuration (Works on Render!) ===
         $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
+        $mail->Host       = 'smtp.sendgrid.net';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'approvativebusiness22@gmail.com';
-        $mail->Password   = 'flomuexchdmqtptq';
-        
-        // Try port 465 with SSL instead of 587 (Render blocks 587)
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        $mail->Port       = 465;
+        $mail->Username   = 'apikey';  // This is literally the word "apikey"
+        $mail->Password   = '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';  // Paste your SG.xxxx key here
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
         
         // CRITICAL FIXES for production/Render
         $mail->SMTPOptions = [
