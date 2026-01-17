@@ -1,5 +1,5 @@
 <?php
-// classes/Note.php - Fixed to handle optional staff_id
+// classes/Note.php - Minimal fix for boolean handling only
 
 require_once __DIR__ . '/../config/Database.php';
 
@@ -63,8 +63,11 @@ class Note
 
         $stmt = $this->pdo->prepare($sql);
 
+        // FIX: Ensure is_completed is always 0 or 1, never empty string
+        $isCompleted = isset($data['is_completed']) ? (int)(bool)$data['is_completed'] : 0;
+
         $stmt->execute([
-            ':created_by'        => $createdBy,  // Now properly validated or null
+            ':created_by'        => $createdBy,
             ':note_type'         => $data['note_type'] ?? 'general',
             ':title'             => trim($data['title']),
             ':content'           => trim($data['content']),
@@ -72,7 +75,7 @@ class Note
             ':related_service_id'=> $data['related_service_id'] ?? null,
             ':priority'          => $data['priority'] ?? 'normal',
             ':due_date'          => $data['due_date'] ?? null,
-            ':is_completed'      => $data['is_completed'] ?? false
+            ':is_completed'      => $isCompleted  // FIX: Use the converted value
         ]);
 
         return (int) $this->pdo->lastInsertId();
@@ -206,6 +209,10 @@ class Note
 
         foreach ($data as $field => $value) {
             if (in_array($field, $allowedFields)) {
+                // FIX: Handle is_completed specially
+                if ($field === 'is_completed') {
+                    $value = (int)(bool)$value;
+                }
                 $setParts[] = "$field = :$field";
                 $params[":$field"] = $value;
             }
@@ -228,8 +235,10 @@ class Note
     {
         $sql = "UPDATE notes SET is_completed = :status WHERE note_id = :id";
         $stmt = $this->pdo->prepare($sql);
+        
+        // FIX: Ensure proper boolean conversion
         return $stmt->execute([
-            ':status' => $isCompleted,
+            ':status' => (int)(bool)$isCompleted,
             ':id' => $noteId
         ]);
     }
