@@ -211,6 +211,98 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             cursor: pointer;
             color: #aaa;
         }
+
+        /* Enhanced status badge in edit mode */
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-in-progress {
+            background: #cce5ff;
+            color: #004085;
+        }
+        .status-pending {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        /* File preview styles */
+        .files-section {
+            margin-top: 16px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .files-section h4 {
+            margin: 0 0 12px 0;
+            font-size: 0.95em;
+            color: #495057;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .file-icon {
+            font-size: 24px;
+        }
+        .file-info {
+            flex: 1;
+        }
+        .file-name {
+            font-weight: 500;
+            color: #212529;
+        }
+        .file-size {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+        .file-preview-btn {
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .file-preview-btn:hover {
+            background: #0056b3;
+        }
+        .no-files {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            padding: 12px;
+        }
+
+        /* View mode step row with files */
+        .view-step-row {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .view-step-header {
+            display: grid;
+            grid-template-columns: 50px 1fr 220px 140px;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 <body>
@@ -245,7 +337,7 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <?php if (empty($tasks)): ?>
             <div style="text-align:center; padding:80px 0; color:#777; font-style:italic;">
-                No client services found<?= !empty($search) ? ' matching “' . htmlspecialchars($search) . '”' : '' ?>.
+                No client services found<?= !empty($search) ? ' matching "' . htmlspecialchars($search) . '"' : '' ?>.
             </div>
         <?php endif; ?>
 
@@ -391,6 +483,24 @@ function openViewModal(csId) {
     loadClientServiceData(csId, 'view');
 }
 
+function getFileIcon(fileType) {
+    if (!fileType) return '📄';
+    
+    const type = fileType.toLowerCase();
+    if (type.includes('pdf')) return '📕';
+    if (type.includes('doc') || type.includes('word')) return '📘';
+    if (type.includes('xls') || type.includes('excel')) return '📗';
+    if (type.includes('image') || type.includes('jpg') || type.includes('png')) return '🖼️';
+    if (type.includes('zip') || type.includes('rar')) return '📦';
+    return '📄';
+}
+
+function formatFileSize(kb) {
+    if (!kb) return 'Unknown size';
+    if (kb < 1024) return kb + ' KB';
+    return (kb / 1024).toFixed(2) + ' MB';
+}
+
 async function loadClientServiceData(csId, mode = 'edit') {
     try {
         const response = await fetch(`../api/get_client_service_details.php?client_service_id=${csId}`);
@@ -429,25 +539,51 @@ async function loadClientServiceData(csId, mode = 'edit') {
             container.innerHTML = '';
 
             if (data.steps && data.steps.length > 0) {
-                data.steps.forEach(step => {
+                for (const step of data.steps) {
                     const statusColor = 
                         step.status === 'completed'    ? '#198754' :
                         step.status === 'in_progress'  ? '#0d6efd' :
                         step.status === 'on_hold'      ? '#ffc107' : '#6c757d';
 
-                    const row = document.createElement('div');
-                    row.className = 'step-row';
-                    row.style.gridTemplateColumns = '50px 1fr 220px 140px';
-                    row.innerHTML = `
-                        <div class="step-circle">${step.requirement_order}</div>
-                        <div style="font-weight:500;">${step.requirement_name}</div>
-                        <div>${step.assigned_staff_name || '—'}</div>
-                        <div style="text-align:center; font-weight:600; color:${statusColor};">
-                            ${step.status.replace('_', ' ').toUpperCase()}
+                    const stepDiv = document.createElement('div');
+                    stepDiv.className = 'view-step-row';
+                    
+                    // Get files for this requirement
+                    let filesHtml = '';
+                    if (step.files && step.files.length > 0) {
+                        filesHtml = '<div class="files-section"><h4>📎 Uploaded Files:</h4>';
+                        step.files.forEach(file => {
+                            filesHtml += `
+                                <div class="file-item">
+                                    <div class="file-icon">${getFileIcon(file.file_type)}</div>
+                                    <div class="file-info">
+                                        <div class="file-name">${file.document_name}</div>
+                                        <div class="file-size">${formatFileSize(file.file_size_kb)}</div>
+                                    </div>
+                                    <button class="file-preview-btn" onclick="window.open('${file.document_url}', '_blank')">
+                                        View File
+                                    </button>
+                                </div>
+                            `;
+                        });
+                        filesHtml += '</div>';
+                    } else {
+                        filesHtml = '<div class="files-section"><div class="no-files">No files uploaded</div></div>';
+                    }
+
+                    stepDiv.innerHTML = `
+                        <div class="view-step-header">
+                            <div class="step-circle">${step.requirement_order}</div>
+                            <div style="font-weight:500;">${step.requirement_name}</div>
+                            <div>${step.assigned_staff_name || '—'}</div>
+                            <div style="text-align:center; font-weight:600; color:${statusColor};">
+                                ${step.status.replace('_', ' ').toUpperCase()}
+                            </div>
                         </div>
+                        ${filesHtml}
                     `;
-                    container.appendChild(row);
-                });
+                    container.appendChild(stepDiv);
+                }
             } else {
                 container.innerHTML = '<p style="text-align:center; color:#777; padding:20px;">No requirements defined for this service.</p>';
             }
@@ -483,15 +619,27 @@ function addStepRow(order, name = '', staffId = null, reqId = null, status = 'pe
     });
 
     const canRemove = (status === 'pending');
+    
+    // Status badge
+    let statusBadge = '';
+    if (status === 'completed') {
+        statusBadge = '<span class="status-badge status-completed">✓ Completed</span>';
+    } else if (status === 'in_progress') {
+        statusBadge = '<span class="status-badge status-in-progress">In Progress</span>';
+    }
+
     const removeBtn = canRemove 
         ? `<button type="button" class="remove-step-btn">Remove</button>` 
         : '';
 
     row.innerHTML = `
         <div class="step-circle">${order}</div>
-        <input type="text" name="steps[${order}][name]" class="step-name-input"
-               placeholder="Enter step name (e.g. Document review)"
-               value="${(name || '').replace(/"/g, '&quot;').replace(/\\/g, '\\\\')}" required>
+        <div>
+            <input type="text" name="steps[${order}][name]" class="step-name-input"
+                   placeholder="Enter step name (e.g. Document review)"
+                   value="${(name || '').replace(/"/g, '&quot;').replace(/\\/g, '\\\\')}" required>
+            ${statusBadge}
+        </div>
         <select name="steps[${order}][staff_id]" class="staff-select" required>
             ${options}
         </select>

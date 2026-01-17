@@ -10,7 +10,7 @@ class Database
         $dbname   = getenv('DB_NAME') ?: 'bookkeeping';
         $username = getenv('DB_USER') ?: 'root';
         $password = getenv('DB_PASS') ?: '';
-        $port     = getenv('DB_PORT') ?: '12488';
+        $port     = getenv('DB_PORT') ?: '3306';
         $charset  = 'utf8mb4';
         $ssl      = getenv('DB_SSL') === 'true';
 

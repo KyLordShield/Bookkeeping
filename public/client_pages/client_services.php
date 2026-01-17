@@ -7,6 +7,13 @@ error_reporting(E_ALL);
 session_start();
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
+
+// Redirect if not logged in as client
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
+    header("Location: ../../login_page.php");
+    exit();
+}
+
 /*
 |--------------------------------------------------------------------------
 | HANDLE AJAX MEETING REQUEST
@@ -18,12 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 ) {
 
     header('Content-Type: application/json');
-
-    // Redirect if not logged in as client
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
-    header("Location: ../../login_page.php");
-    exit();
-}
 
     try {
         $db = Database::getInstance()->getConnection();
@@ -132,6 +133,58 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
         exit;
     }
 }
+
+/*
+|--------------------------------------------------------------------------
+| FETCH SERVICES FROM DATABASE
+|--------------------------------------------------------------------------
+*/
+try {
+    $db = Database::getInstance()->getConnection();
+    
+    $stmt = $db->prepare("
+        SELECT service_id, service_name, service_type, description, is_active 
+        FROM services 
+        WHERE is_active = 1
+        ORDER BY service_name ASC
+    ");
+    $stmt->execute();
+    $services = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+} catch (Exception $e) {
+    error_log('FETCH SERVICES ERROR: ' . $e->getMessage());
+    $services = [];
+}
+
+/*
+|--------------------------------------------------------------------------
+| SERVICE IMAGES MAPPING
+|--------------------------------------------------------------------------
+*/
+function getServiceImage($serviceName) {
+    // Normalize the service name for matching
+    $normalized = strtolower(trim($serviceName));
+    
+    // Check for keywords in service name
+    if (strpos($normalized, 'bookkeeping') !== false && strpos($normalized, 'single') !== false) {
+        return 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&h=300&fit=crop';
+    }
+    if (strpos($normalized, 'bookkeeping') !== false && strpos($normalized, 'corporation') !== false) {
+        return 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop';
+    }
+    if (strpos($normalized, 'human resource') !== false || strpos($normalized, 'hr') !== false) {
+        return 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=400&h=300&fit=crop';
+    }
+    if (strpos($normalized, 'business registration') !== false || strpos($normalized, 'registration') !== false) {
+        return 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=400&h=300&fit=crop';
+    }
+    if (strpos($normalized, 'renewal') !== false || strpos($normalized, 'compliance') !== false) {
+        return 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&h=300&fit=crop';
+    }
+    
+    // Default image for unmatched services
+    return 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400&h=300&fit=crop';
+}
 ?>
 
 <!DOCTYPE html>
@@ -160,6 +213,32 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
             margin-top: 10px;
             display: none;
         }
+
+        .service-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .service-card {
+            overflow: hidden;
+        }
+
+        .service-content {
+            padding: 20px;
+        }
+
+        .service-card-title {
+            margin-top: 15px;
+        }
+
+        .no-services {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+        }
     </style>
 </head>
 <body>
@@ -174,60 +253,34 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
             </div>
 
             <div class="services-grid">
-                <!-- Service Cards -->
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">📊</div>
-                    <div class="service-card-title">Bookkeeping - Single Proprietor</div>
-                    <div class="service-description">Monthly bookkeeping services for single proprietor</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping - Single Proprietor')">Request Meeting</button>
+                <?php if (empty($services)): ?>
+                    <div class="no-services">
+                        <p>No services available at the moment. Please check back later.</p>
                     </div>
-                </div>
-
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">📊</div>
-                    <div class="service-card-title">Bookkeeping - Corporation</div>
-                    <div class="service-description">Comprehensive bookkeeping for corporations with mu...</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('Bookkeeping - Corporation')">Request Meeting</button>
-                    </div>
-                </div>
-
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">📋</div>
-                    <div class="service-card-title">Business Registration</div>
-                    <div class="service-description">Complete business registration with DTI/SEC and BI...</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('Business Registration')">Request Meeting</button>
-                    </div>
-                </div>
-
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">👥</div>
-                    <div class="service-card-title">HR Consultation</div>
-                    <div class="service-description">HR policy development and employee handbook creati...</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('HR Consultation')">Request Meeting</button>
-                    </div>
-                </div>
-
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">📄</div>
-                    <div class="service-card-title">Tax Filing Assistance</div>
-                    <div class="service-description">Quarterly and annual tax filing assistance</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('Tax Filing Assistance')">Request Meeting</button>
-                    </div>
-                </div>
-
-                <div class="service-card" data-category="finance">
-                    <div class="service-icon">💰</div>
-                    <div class="service-card-title">Payroll Processing</div>
-                    <div class="service-description">Monthly payroll computation and processing</div>
-                    <div class="service-price-section">
-                        <button class="select-service-btn" onclick="openMeetingModal('Payroll Processing')">Request Meeting</button>
-                    </div>
-                </div>
+                <?php else: ?>
+                    <?php foreach ($services as $service): ?>
+                        <div class="service-card" data-category="<?php echo htmlspecialchars($service['service_type']); ?>">
+                            <img src="<?php echo getServiceImage($service['service_name']); ?>" 
+                                 alt="<?php echo htmlspecialchars($service['service_name']); ?>" 
+                                 class="service-image">
+                            <div class="service-content">
+                                <div class="service-card-title"><?php echo htmlspecialchars($service['service_name']); ?></div>
+                                <div class="service-description">
+                                    <?php 
+                                    $desc = htmlspecialchars($service['description']);
+                                    echo strlen($desc) > 100 ? substr($desc, 0, 100) . '...' : $desc;
+                                    ?>
+                                </div>
+                                <div class="service-price-section">
+                                    <button class="select-service-btn" 
+                                            onclick="openMeetingModal('<?php echo htmlspecialchars($service['service_name'], ENT_QUOTES); ?>')">
+                                        Request Meeting
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>

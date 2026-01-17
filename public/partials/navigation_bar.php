@@ -1,7 +1,7 @@
 <!-- partials/navigation_bar.php -->
 <div class="sidebar">
 <div class="logo">
-        <img src="../assets/images/logo.png" alt="Company Logo">
+        <img src="../assets/images/Logo.png" alt="Company Logo">
     </div>
     
     <?php 
