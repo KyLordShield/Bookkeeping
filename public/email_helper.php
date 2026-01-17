@@ -1,5 +1,5 @@
 <?php
-// public/email_helper.php
+// public/email_helper.php - Using Environment Variables (Secure!)
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
@@ -7,6 +7,10 @@ use PHPMailer\PHPMailer\Exception;
 
 // Load Composer autoloader
 require_once __DIR__ . '/../vendor/autoload.php';
+
+// Load environment variables
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->safeLoad();
 
 function sendResetCodeEmail(
     string $toEmail,
@@ -16,14 +20,14 @@ function sendResetCodeEmail(
     $mail = new PHPMailer(true);
 
     try {
-        // === SENDGRID SMTP Configuration (Works on Render!) ===
+        // === SMTP Configuration from Environment Variables ===
         $mail->isSMTP();
-        $mail->Host       = 'smtp.sendgrid.net';
+        $mail->Host       = $_ENV['SMTP_HOST'] ?? 'smtp.sendgrid.net';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'apikey';  // This is literally the word "apikey"
-        $mail->Password   = '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';  // Paste your SG.xxxx key here
+        $mail->Username   = $_ENV['SMTP_USERNAME'] ?? 'apikey';
+        $mail->Password   = $_ENV['SENDGRID_API_KEY'] ?? '';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        $mail->Port       = $_ENV['SMTP_PORT'] ?? 587;
         
         // CRITICAL FIXES for production/Render
         $mail->SMTPOptions = [
@@ -44,13 +48,15 @@ function sendResetCodeEmail(
         };
 
         // Sender
-        $mail->setFrom('approvativebusiness22@gmail.com', 'Approvative Business Documents Processing');
+        $fromEmail = $_ENV['SMTP_FROM_EMAIL'] ?? 'approvativebusiness22@gmail.com';
+        $fromName = $_ENV['SMTP_FROM_NAME'] ?? 'Approvative Business';
+        $mail->setFrom($fromEmail, $fromName);
         
         // Recipient
         $mail->addAddress($toEmail);
         
         // Reply-to (helps with deliverability)
-        $mail->addReplyTo('approvativebusiness22@gmail.com', 'Support');
+        $mail->addReplyTo($fromEmail, 'Support');
 
         // Email content
         $mail->isHTML(true);
