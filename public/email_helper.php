@@ -8,9 +8,11 @@ use PHPMailer\PHPMailer\Exception;
 // Load Composer autoloader
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Load environment variables
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-$dotenv->safeLoad();
+// Load environment variables (only for local development)
+if (file_exists(__DIR__ . '/../.env')) {
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+    $dotenv->safeLoad();
+}
 
 function sendResetCodeEmail(
     string $toEmail,
@@ -21,13 +23,18 @@ function sendResetCodeEmail(
 
     try {
         // === SMTP Configuration from Environment Variables ===
+        // Use getenv() which works on both local and Render
         $mail->isSMTP();
-        $mail->Host       = $_ENV['SMTP_HOST'] ?? 'smtp.sendgrid.net';
+        $mail->Host       = getenv('SMTP_HOST') ?: 'smtp.sendgrid.net';
         $mail->SMTPAuth   = true;
-        $mail->Username   = $_ENV['SMTP_USERNAME'] ?? 'apikey';
-        $mail->Password   = $_ENV['SENDGRID_API_KEY'] ?? '';
+        $mail->Username   = getenv('SMTP_USERNAME') ?: 'apikey';
+        $mail->Password   = getenv('SENDGRID_API_KEY') ?: '';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = $_ENV['SMTP_PORT'] ?? 587;
+        $mail->Port       = (int)(getenv('SMTP_PORT') ?: 587);
+        
+        // Log to check if env vars are loaded
+        error_log("SMTP Config - Host: " . $mail->Host . ", Port: " . $mail->Port . ", User: " . $mail->Username);
+        error_log("API Key present: " . (empty($mail->Password) ? 'NO' : 'YES'));
         
         // CRITICAL FIXES for production/Render
         $mail->SMTPOptions = [
@@ -48,8 +55,8 @@ function sendResetCodeEmail(
         };
 
         // Sender
-        $fromEmail = $_ENV['SMTP_FROM_EMAIL'] ?? 'approvativebusiness22@gmail.com';
-        $fromName = $_ENV['SMTP_FROM_NAME'] ?? 'Approvative Business';
+        $fromEmail = getenv('SMTP_FROM_EMAIL') ?: 'approvativebusiness22@gmail.com';
+        $fromName = getenv('SMTP_FROM_NAME') ?: 'Approvative Business';
         $mail->setFrom($fromEmail, $fromName);
         
         // Recipient
