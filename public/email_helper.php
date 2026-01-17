@@ -1,7 +1,13 @@
 <?php
-// public/email_helper.php - Using SendGrid HTTP API (WORKS ON RENDER!)
+// public/email_helper.php - Using SendGrid HTTP API (WORKS ON RENDER & LOCALHOST!)
 
 require_once __DIR__ . '/../vendor/autoload.php';
+
+// Load .env file if it exists (for localhost)
+if (file_exists(__DIR__ . '/../.env')) {
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+    $dotenv->load();
+}
 
 function sendResetCodeEmail(
     string $toEmail,
@@ -9,16 +15,16 @@ function sendResetCodeEmail(
     string $userName = "User"
 ): bool {
     try {
-        // Get API key from environment variable
-        $apiKey = getenv('SENDGRID_API_KEY');
+        // Get API key from environment variable (works on both localhost and Render)
+        $apiKey = getenv('SENDGRID_API_KEY') ?: $_ENV['SENDGRID_API_KEY'] ?? null;
         
         if (empty($apiKey)) {
-            error_log("CRITICAL: SENDGRID_API_KEY not set in environment variables");
+            error_log("CRITICAL: SENDGRID_API_KEY not set in environment variables or .env file");
             return false;
         }
         
-        $fromEmail = getenv('SMTP_FROM_EMAIL') ?: 'approvativebusiness22@gmail.com';
-        $fromName = getenv('SMTP_FROM_NAME') ?: 'Approvative Business';
+        $fromEmail = getenv('SMTP_FROM_EMAIL') ?: $_ENV['SMTP_FROM_EMAIL'] ?? 'approvativebusiness22@gmail.com';
+        $fromName = getenv('SMTP_FROM_NAME') ?: $_ENV['SMTP_FROM_NAME'] ?? 'Approvative Business';
         
         $email = new \SendGrid\Mail\Mail();
         $email->setFrom($fromEmail, $fromName);
@@ -27,21 +33,31 @@ function sendResetCodeEmail(
         
         $htmlContent = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                <h2>Hello {$userName},</h2>
-                <p>You requested to reset your password for your Client Service account.</p>
+                <div style='background: #7D1C19; padding: 20px; text-align: center; margin-bottom: 30px;'>
+                    <h1 style='color: white; margin: 0;'>Approvative Business</h1>
+                </div>
                 
-                <div style='background: #f5f5f5; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;'>
-                    <h1 style='font-size: 42px; letter-spacing: 10px; margin: 10px 0; color: #2c3e50;'>
+                <h2 style='color: #333;'>Hello {$userName},</h2>
+                <p style='color: #666; font-size: 16px;'>You recently requested to reset your password for your account. Use the code below to complete the process:</p>
+                
+                <div style='background: #f8f9fa; padding: 25px; text-align: center; border-radius: 8px; margin: 30px 0; border: 2px solid #e9ecef;'>
+                    <p style='color: #888; font-size: 14px; margin: 0 0 10px 0;'>Your verification code:</p>
+                    <h1 style='font-size: 36px; letter-spacing: 8px; margin: 10px 0; color: #7D1C19; font-weight: bold;'>
                         {$resetCode}
                     </h1>
-                    <p style='color: #666; font-size: 16px;'>
-                        This code is valid for <strong>30 minutes</strong>.
+                    <p style='color: #888; font-size: 14px; margin: 10px 0 0 0;'>
+                        Valid for 30 minutes
                     </p>
                 </div>
                 
-                <p>If you didn't request this reset, please ignore this email or contact support if you're concerned about account security.</p>
-                <br>
-                <small style='color: #888;'>Client Service Management System • Bacolod City</small>
+                <p style='color: #666; font-size: 14px;'>If you didn't request this password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+                
+                <hr style='border: none; border-top: 1px solid #e9ecef; margin: 30px 0;'>
+                
+                <p style='color: #999; font-size: 12px; text-align: center;'>
+                    This is an automated message from Approvative Business Documents Processing<br>
+                    Bacolod City, Philippines
+                </p>
             </div>
         ";
         
