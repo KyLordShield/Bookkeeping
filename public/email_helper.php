@@ -1,75 +1,31 @@
 <?php
-// public/email_helper.php - Using Environment Variables (Secure!)
+// public/email_helper.php - Using SendGrid HTTP API (WORKS ON RENDER!)
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\SMTP;
-use PHPMailer\PHPMailer\Exception;
-
-// Load Composer autoloader
 require_once __DIR__ . '/../vendor/autoload.php';
-
-// Load environment variables (only for local development)
-if (file_exists(__DIR__ . '/../.env')) {
-    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-    $dotenv->safeLoad();
-}
 
 function sendResetCodeEmail(
     string $toEmail,
     string $resetCode,
     string $userName = "User"
 ): bool {
-    $mail = new PHPMailer(true);
-
     try {
-        // === SMTP Configuration from Environment Variables ===
-        // Use getenv() which works on both local and Render
-        $mail->isSMTP();
-        $mail->Host       = getenv('SMTP_HOST') ?: 'smtp.sendgrid.net';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = getenv('SMTP_USERNAME') ?: 'apikey';
-        $mail->Password   = getenv('SENDGRID_API_KEY') ?: '';
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = (int)(getenv('SMTP_PORT') ?: 587);
+        // Get API key from environment variable
+        $apiKey = getenv('SENDGRID_API_KEY');
         
-        // Log to check if env vars are loaded
-        error_log("SMTP Config - Host: " . $mail->Host . ", Port: " . $mail->Port . ", User: " . $mail->Username);
-        error_log("API Key present: " . (empty($mail->Password) ? 'NO' : 'YES'));
+        if (empty($apiKey)) {
+            error_log("CRITICAL: SENDGRID_API_KEY not set in environment variables");
+            return false;
+        }
         
-        // CRITICAL FIXES for production/Render
-        $mail->SMTPOptions = [
-            'ssl' => [
-                'verify_peer'       => false,
-                'verify_peer_name'  => false,
-                'allow_self_signed' => true
-            ]
-        ];
-        
-        // Increase timeout for slower connections
-        $mail->Timeout = 30;
-        
-        // Enable verbose debug output (TEMPORARILY - check logs)
-        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
-        $mail->Debugoutput = function($str, $level) {
-            error_log("PHPMailer Debug [$level]: $str");
-        };
-
-        // Sender
         $fromEmail = getenv('SMTP_FROM_EMAIL') ?: 'approvativebusiness22@gmail.com';
         $fromName = getenv('SMTP_FROM_NAME') ?: 'Approvative Business';
-        $mail->setFrom($fromEmail, $fromName);
         
-        // Recipient
-        $mail->addAddress($toEmail);
+        $email = new \SendGrid\Mail\Mail();
+        $email->setFrom($fromEmail, $fromName);
+        $email->setSubject("Your Password Reset Code - Client Service Management");
+        $email->addTo($toEmail, $userName);
         
-        // Reply-to (helps with deliverability)
-        $mail->addReplyTo($fromEmail, 'Support');
-
-        // Email content
-        $mail->isHTML(true);
-        $mail->CharSet = 'UTF-8';
-        $mail->Subject = 'Your Password Reset Code - Client Service Management';
-        $mail->Body    = "
+        $htmlContent = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
                 <h2>Hello {$userName},</h2>
                 <p>You requested to reset your password for your Client Service account.</p>
@@ -88,18 +44,31 @@ function sendResetCodeEmail(
                 <small style='color: #888;'>Client Service Management System • Bacolod City</small>
             </div>
         ";
-
-        $mail->AltBody = "Hello {$userName},\n\nYour password reset code is: {$resetCode}\nThis code is valid for 30 minutes.\n\nIf you didn't request this, ignore this email.";
-
-        $mail->send();
-        error_log("Password reset email sent successfully to: $toEmail");
-        return true;
-
+        
+        $email->addContent("text/html", $htmlContent);
+        
+        $textContent = "Hello {$userName},\n\n" .
+                      "Your password reset code is: {$resetCode}\n" .
+                      "This code is valid for 30 minutes.\n\n" .
+                      "If you didn't request this, ignore this email.";
+        
+        $email->addContent("text/plain", $textContent);
+        
+        $sendgrid = new \SendGrid($apiKey);
+        $response = $sendgrid->send($email);
+        
+        if ($response->statusCode() >= 200 && $response->statusCode() < 300) {
+            error_log("Password reset email sent successfully to: $toEmail via SendGrid HTTP API");
+            return true;
+        } else {
+            error_log("SendGrid API error: " . $response->statusCode() . " - " . $response->body());
+            return false;
+        }
+        
     } catch (Exception $e) {
-        error_log("CRITICAL: Reset code email failed to $toEmail");
-        error_log("PHPMailer Error: " . $mail->ErrorInfo);
-        error_log("Exception Message: " . $e->getMessage());
-        error_log("Stack Trace: " . $e->getTraceAsString());
+        error_log("CRITICAL: SendGrid email failed to $toEmail");
+        error_log("Error: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
         return false;
     }
 }

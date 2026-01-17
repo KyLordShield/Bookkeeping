@@ -7,6 +7,7 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'Attribute' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
+    'BaseSendGridClientInterface' => $vendorDir . '/sendgrid/sendgrid/lib/BaseSendGridClientInterface.php',
     'Cloudinary\\Api\\Admin\\AdminApi' => $vendorDir . '/cloudinary/cloudinary_php/src/Api/Admin/AdminApi.php',
     'Cloudinary\\Api\\Admin\\AnalysisTrait' => $vendorDir . '/cloudinary/cloudinary_php/src/Api/Admin/AnalysisTrait.php',
     'Cloudinary\\Api\\Admin\\ApiEndPoint' => $vendorDir . '/cloudinary/cloudinary_php/src/Api/Admin/ApiEndPoint.php',
@@ -655,7 +656,9 @@ return array(
     'Cloudinary\\Utils\\SignatureVerifier' => $vendorDir . '/cloudinary/cloudinary_php/src/Utils/SignatureVerifier.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
     'PhpToken' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/PhpToken.php',
+    'SendGrid' => $vendorDir . '/sendgrid/sendgrid/lib/SendGrid.php',
     'Stringable' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/Stringable.php',
+    'TwilioEmail' => $vendorDir . '/sendgrid/sendgrid/lib/TwilioEmail.php',
     'UnhandledMatchError' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/UnhandledMatchError.php',
     'ValueError' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/ValueError.php',
 );
