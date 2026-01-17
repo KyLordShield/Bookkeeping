@@ -59,17 +59,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $expires
             ]);
 
+            // Log the attempt
+            error_log("Password reset requested for user_id: {$user['user_id']}, email: $email, code: $code");
+
             // Send real email
             $userName = trim($user['first_name'] . ' ' . $user['last_name']) ?: $user['username'];
 
             if (sendResetCodeEmail($email, $code, $userName)) {
                 $message = "success";
                 $messageType = "success";
+                error_log("Reset code sent successfully to: $email");
             } else {
-                $error = "We couldn't send the reset code right now. Please try again later or contact support.";
+                // Check error logs for details
+                error_log("FAILED to send reset code to: $email (Check PHPMailer logs above)");
+                $error = "We couldn't send the reset code right now. Please check:\n\n" .
+                         "1. Your email address is correct\n" .
+                         "2. Check your spam/junk folder\n" .
+                         "3. Try again in a few minutes\n\n" .
+                         "If the problem persists, contact support with code: ERR_MAIL_" . time();
             }
         } else {
             // Security: same message regardless of whether the combo exists
+            error_log("Password reset attempt for non-matching username/email: $username / $email");
             $message = "generic";
             $messageType = "generic";
         }
@@ -137,9 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       Swal.fire({
         icon: 'error',
         title: 'Oops...',
-        text: '<?php echo addslashes($error); ?>',
+        html: '<?php echo nl2br(addslashes($error)); ?>',
         confirmButtonColor: '#7D1C19',
-        confirmButtonText: 'Try Again'
+        confirmButtonText: 'Try Again',
+        width: '500px'
       });
     <?php endif; ?>
 

@@ -6,7 +6,6 @@ use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
 // Load Composer autoloader
-// Since this file is in /public, go up one level to reach vendor/
 require_once __DIR__ . '/../vendor/autoload.php';
 
 function sendResetCodeEmail(
@@ -21,27 +20,41 @@ function sendResetCodeEmail(
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        
-        // === ONLY CHANGE THESE TWO LINES ===
-        $mail->Username   = 'approvativebusiness22@gmail.com';     // Your dedicated Gmail - already correct
-        $mail->Password   = 'flomuexchdmqtptq';                   // Your App Password - already correct (no spaces!)
-        
+        $mail->Username   = 'approvativebusiness22@gmail.com';
+        $mail->Password   = 'flomuexchdmqtptq';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
-
-        // Optional: Enable debug only when testing (comment out later)
-        // $mail->SMTPDebug = 2;
-        // $mail->Debugoutput = 'html';
+        
+        // CRITICAL FIXES for production/Render
+        $mail->SMTPOptions = [
+            'ssl' => [
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true
+            ]
+        ];
+        
+        // Increase timeout for slower connections
+        $mail->Timeout = 30;
+        
+        // Enable verbose debug output (TEMPORARILY - check logs)
+        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
+        $mail->Debugoutput = function($str, $level) {
+            error_log("PHPMailer Debug [$level]: $str");
+        };
 
         // Sender
-        // You can keep this or change to match your Gmail exactly
         $mail->setFrom('approvativebusiness22@gmail.com', 'Approvative Business Documents Processing');
-
+        
         // Recipient
         $mail->addAddress($toEmail);
+        
+        // Reply-to (helps with deliverability)
+        $mail->addReplyTo('approvativebusiness22@gmail.com', 'Support');
 
         // Email content
         $mail->isHTML(true);
+        $mail->CharSet = 'UTF-8';
         $mail->Subject = 'Your Password Reset Code - Client Service Management';
         $mail->Body    = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
@@ -66,10 +79,15 @@ function sendResetCodeEmail(
         $mail->AltBody = "Hello {$userName},\n\nYour password reset code is: {$resetCode}\nThis code is valid for 30 minutes.\n\nIf you didn't request this, ignore this email.";
 
         $mail->send();
+        error_log("Password reset email sent successfully to: $toEmail");
         return true;
 
     } catch (Exception $e) {
-        error_log("Reset code email failed: " . $mail->ErrorInfo);
+        error_log("CRITICAL: Reset code email failed to $toEmail");
+        error_log("PHPMailer Error: " . $mail->ErrorInfo);
+        error_log("Exception Message: " . $e->getMessage());
+        error_log("Stack Trace: " . $e->getTraceAsString());
         return false;
     }
 }
+?>
