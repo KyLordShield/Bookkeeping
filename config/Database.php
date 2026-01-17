@@ -1,29 +1,19 @@
 <?php
-
 class Database
 {
-    // Hold the single instance
     private static $instance = null;
-
-    // Hold the PDO connection
     private $pdo;
 
-    // Private constructor (Singleton pattern)
     private function __construct()
     {
-        // ===============================
-        // AUTO-DETECT ENVIRONMENT
-        // ===============================
         $host     = getenv('DB_HOST') ?: 'localhost';
-        $dbname   = getenv('DB_NAME') ?: 'client_service_management';
+        $dbname   = getenv('DB_NAME') ?: 'bookkeeping';
         $username = getenv('DB_USER') ?: 'root';
         $password = getenv('DB_PASS') ?: '';
         $port     = getenv('DB_PORT') ?: '3306';
         $charset  = 'utf8mb4';
+        $ssl      = getenv('DB_SSL') === 'true';
 
-        // ===============================
-        // DSN (Aiven + Localhost compatible)
-        // ===============================
         $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}";
 
         $options = [
@@ -32,42 +22,35 @@ class Database
             PDO::ATTR_EMULATE_PREPARES   => false,
         ];
 
+        // Add SSL if required
+        if ($ssl) {
+            $options[PDO::MYSQL_ATTR_SSL_CA] = __DIR__ . '/ca.pem'; 
+            // Make sure you uploaded Aiven's ca.pem to your project root
+        }
+
         try {
             $this->pdo = new PDO($dsn, $username, $password, $options);
-
-            // Set timezone to Philippines (UTC+8)
             $this->pdo->exec("SET time_zone = '+08:00'");
-
         } catch (PDOException $e) {
             die(
-                "<strong>Database connection failed.</strong><br><br>" .
+                "<strong>Database connection failed.</strong><br>" .
                 "Environment: " . (getenv('DB_HOST') ? 'Production (Aiven)' : 'Localhost') .
-                "<br><br>Error details:<br>" . $e->getMessage()
+                "<br><br>Error: " . $e->getMessage()
             );
         }
     }
 
-    // Get the single instance
     public static function getInstance()
     {
-        if (self::$instance === null) {
-            self::$instance = new self();
-        }
+        if (self::$instance === null) self::$instance = new self();
         return self::$instance;
     }
 
-    // Get the PDO connection
     public function getConnection()
     {
         return $this->pdo;
     }
 
-    // Prevent cloning
     private function __clone() {}
-
-    // Prevent unserialization
-    public function __wakeup()
-    {
-        throw new Exception("Cannot unserialize Database singleton");
-    }
+    public function __wakeup() { throw new Exception("Cannot unserialize Database singleton"); }
 }
