@@ -71,12 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log("Reset code sent successfully to: $email");
             } else {
                 // Check error logs for details
-                error_log("FAILED to send reset code to: $email (Check PHPMailer logs above)");
-                $error = "We couldn't send the reset code right now. Please check:\n\n" .
-                         "1. Your email address is correct\n" .
-                         "2. Check your spam/junk folder\n" .
-                         "3. Try again in a few minutes\n\n" .
-                         "If the problem persists, contact support with code: ERR_MAIL_" . time();
+                error_log("FAILED to send reset code to: $email (Check SendGrid logs above)");
+                $error = "We're having trouble sending the email right now.\n\n" .
+                         "Please try the following:\n\n" .
+                         "1. Check your email address is correct\n" .
+                         "2. Wait a few minutes and try again\n" .
+                         "3. Check your spam/junk folder\n\n" .
+                         "If this problem continues, please contact support at:\n" .
+                         "approvativebusiness22@gmail.com\n\n" .
+                         "Error Reference: ERR_MAIL_" . time();
             }
         } else {
             // Security: same message regardless of whether the combo exists
@@ -147,11 +150,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($error): ?>
       Swal.fire({
         icon: 'error',
-        title: 'Oops...',
+        title: 'Unable to Send Email',
         html: '<?php echo nl2br(addslashes($error)); ?>',
         confirmButtonColor: '#7D1C19',
-        confirmButtonText: 'Try Again',
-        width: '500px'
+        confirmButtonText: 'I Understand',
+        width: '600px',
+        customClass: {
+          popup: 'error-popup',
+          htmlContainer: 'error-text'
+        }
       });
     <?php endif; ?>
 
