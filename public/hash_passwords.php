@@ -5,25 +5,11 @@
  * Ignores already-hashed passwords
  */
 
-// ==========================
-// DATABASE CONFIG
-// ==========================
-$host = "localhost";
-$db   = "client_service_management";
-$user = "root";
-$pass = "";
+require_once 'Database.php'; // Use your existing Database singleton
 
-// ==========================
-// CONNECT
-// ==========================
 try {
-    $pdo = new PDO(
-        "mysql:host=$host;dbname=$db;charset=utf8mb4",
-        $user,
-        $pass,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-} catch (PDOException $e) {
+    $pdo = Database::getInstance()->getConnection();
+} catch (Exception $e) {
     die("DB Error: " . $e->getMessage());
 }
 
@@ -36,7 +22,7 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $updatedUsers = [];
 
 /**
- * Function to check if password is already hashed
+ * Check if password is already hashed
  */
 function isHashed($password) {
     return preg_match('/^\$2y\$|\$2a\$|\$argon2i\$|\$argon2id\$/', $password);
@@ -47,7 +33,7 @@ foreach ($users as $row) {
     $username = $row['username'];
     $password = trim($row['password_hash']);
 
-    // 🔴 ONLY hash if NOT hashed
+    // 🔴 Only hash if not hashed
     if (!isHashed($password)) {
         $hashed = password_hash($password, PASSWORD_DEFAULT);
 
@@ -74,43 +60,13 @@ foreach ($users as $row) {
     <meta charset="UTF-8">
     <title>Password Hash Migration</title>
     <style>
-        body {
-            font-family: Arial;
-            background: #f4f6f8;
-            padding: 40px;
-        }
-        .box {
-            background: #fff;
-            padding: 25px;
-            max-width: 750px;
-            margin: auto;
-            border-radius: 6px;
-            box-shadow: 0 2px 10px rgba(0,0,0,.1);
-        }
-        .success {
-            background: #e8f5e9;
-            padding: 12px;
-            border-left: 5px solid #2e7d32;
-            margin-bottom: 15px;
-        }
-        .warn {
-            background: #fff3cd;
-            padding: 12px;
-            border-left: 5px solid #ff9800;
-            margin-bottom: 15px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        th, td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background: #f1f1f1;
-        }
+        body { font-family: Arial; background: #f4f6f8; padding: 40px; }
+        .box { background: #fff; padding: 25px; max-width: 750px; margin: auto; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+        .success { background: #e8f5e9; padding: 12px; border-left: 5px solid #2e7d32; margin-bottom: 15px; }
+        .warn { background: #fff3cd; padding: 12px; border-left: 5px solid #ff9800; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; }
+        th { background: #f1f1f1; }
     </style>
 </head>
 <body>
