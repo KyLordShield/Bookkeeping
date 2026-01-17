@@ -22,8 +22,10 @@ function sendResetCodeEmail(
         $mail->SMTPAuth   = true;
         $mail->Username   = 'approvativebusiness22@gmail.com';
         $mail->Password   = 'flomuexchdmqtptq';
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        
+        // Try port 465 with SSL instead of 587 (Render blocks 587)
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        $mail->Port       = 465;
         
         // CRITICAL FIXES for production/Render
         $mail->SMTPOptions = [
