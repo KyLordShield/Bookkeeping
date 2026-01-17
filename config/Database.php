@@ -10,7 +10,7 @@ class Database
         $dbname   = getenv('DB_NAME') ?: 'bookkeeping';
         $username = getenv('DB_USER') ?: 'root';
         $password = getenv('DB_PASS') ?: '';
-        $port     = getenv('DB_PORT') ?: '3306';
+        $port     = getenv('DB_PORT') ?: '12488';
         $charset  = 'utf8mb4';
         $ssl      = getenv('DB_SSL') === 'true';
 
@@ -22,10 +22,8 @@ class Database
             PDO::ATTR_EMULATE_PREPARES   => false,
         ];
 
-        // Add SSL if required
         if ($ssl) {
             $options[PDO::MYSQL_ATTR_SSL_CA] = __DIR__ . '/ca.pem'; 
-            // Make sure you uploaded Aiven's ca.pem to your project root
         }
 
         try {
@@ -46,11 +44,7 @@ class Database
         return self::$instance;
     }
 
-    public function getConnection()
-    {
-        return $this->pdo;
-    }
-
+    public function getConnection() { return $this->pdo; }
     private function __clone() {}
     public function __wakeup() { throw new Exception("Cannot unserialize Database singleton"); }
 }
