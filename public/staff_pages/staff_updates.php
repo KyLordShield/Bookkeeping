@@ -249,7 +249,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             </div>
             <div class="modal-actions">
                 <button class="modal-action-btn btn-mark-read" id="markReadBtn" onclick="markAsRead()">MARK AS READ</button>
-                <button class="modal-action-btn btn-go-task" id="goToTaskBtn" style="display: none;">GO TO TASK</button>
                 <button class="modal-action-btn btn-dismiss" onclick="dismissNotification()">DISMISS</button>
             </div>
         </div>
@@ -444,16 +443,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             document.getElementById('modalStatus').textContent = notif.is_read ? 'Read' : 'Unread';
             
             var markReadBtn = document.getElementById('markReadBtn');
-            var goToTaskBtn = document.getElementById('goToTaskBtn');
             
             markReadBtn.style.display = notif.is_read ? 'none' : 'block';
             
-            if (notif.link_url) {
-                goToTaskBtn.style.display = 'block';
-                goToTaskBtn.onclick = function() { window.location.href = notif.link_url; };
-            } else {
-                goToTaskBtn.style.display = 'none';
-            }
             
             document.getElementById('notificationModal').classList.add('show');
         }
