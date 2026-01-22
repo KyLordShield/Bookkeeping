@@ -26,6 +26,9 @@ if ($statusFilter === 'new') {
     $where[] = "cs.overall_status = 'in_progress'";
 } elseif ($statusFilter === 'completed') {
     $where[] = "cs.overall_status = 'completed'";
+} elseif ($statusFilter === 'overdue') {
+    $where[] = "cs.deadline < CURDATE()";
+    $where[] = "cs.overall_status != 'completed'";
 }
 
 if ($search !== '') {
@@ -35,6 +38,16 @@ if ($search !== '') {
 }
 
 $whereClause = $where ? "WHERE " . implode(" AND ", $where) : "";
+
+// Count overdue services for badge
+$overdueCountQuery = "
+    SELECT COUNT(*) as overdue_count
+    FROM client_services cs
+    WHERE cs.deadline < CURDATE()
+    AND cs.overall_status != 'completed'
+";
+$overdueStmt = Database::getInstance()->getConnection()->query($overdueCountQuery);
+$overdueCount = $overdueStmt->fetch(PDO::FETCH_ASSOC)['overdue_count'];
 
 $query = "
     SELECT 
@@ -47,6 +60,7 @@ $query = "
         c.email,
         c.phone,
         s.service_name,
+        DATEDIFF(CURDATE(), cs.deadline) as days_overdue,
         (SELECT COUNT(*) FROM client_service_requirements WHERE client_service_id = cs.client_service_id) AS total_steps,
         (SELECT COUNT(*) FROM client_service_requirements WHERE client_service_id = cs.client_service_id AND status = 'completed') AS completed_steps
     FROM client_services cs
@@ -54,12 +68,17 @@ $query = "
     JOIN services s ON cs.service_id = s.service_id
     $whereClause
     ORDER BY 
+        CASE 
+            WHEN cs.deadline < CURDATE() AND cs.overall_status != 'completed' THEN 0
+            ELSE 1
+        END,
         CASE cs.overall_status 
             WHEN 'pending' THEN 1
             WHEN 'in_progress' THEN 2
             WHEN 'completed' THEN 3
             WHEN 'on_hold' THEN 4
         END,
+        cs.deadline ASC,
         cs.start_date DESC
 ";
 
@@ -88,6 +107,50 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             margin-bottom: 24px;
             padding: 20px;
+            position: relative;
+        }
+        .task-card.overdue {
+            border-left: 4px solid #dc3545;
+            background: #fff5f5;
+        }
+        .overdue-badge {
+            position: absolute;
+            top: 15px;
+            right: 160px;
+            background: #dc3545;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .filter-btn-overdue {
+            position: relative;
+        }
+        .notification-count {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75em;
+            font-weight: bold;
+            animation: bounce 1s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
         .task-header {
             display: flex;
@@ -315,12 +378,29 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="page-subtitle">Review client services and assign staff to each step</div>
         </div>
 
+        <?php if ($overdueCount > 0): ?>
+        <div style="background: #fff3cd; border-left: 4px solid #dc3545; padding: 15px 20px; border-radius: 6px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 24px;">⚠️</span>
+            <div>
+                <strong style="color: #856404; font-size: 1.1em;">Action Required:</strong>
+                <span style="color: #856404;"> You have <strong><?= $overdueCount ?></strong> overdue service<?= $overdueCount > 1 ? 's' : '' ?> that need immediate attention.</span>
+                <a href="?status=overdue" style="color: #dc3545; text-decoration: underline; margin-left: 8px; font-weight: 600;">View Now →</a>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div style="margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
             <div>
                 <span class="filter-label" style="font-weight:500;">Filter by Status:</span>
                 <div class="filter-buttons" style="display:inline-flex; margin-left:12px; gap:8px;">
-                    <a href="?status=all"       class="filter-btn <?= $statusFilter==='all'?'active':'' ?>">All</a>
-                    <a href="?status=new"       class="filter-btn <?= $statusFilter==='new'?'active':'' ?>">New</a>
+                    <a href="?status=all" class="filter-btn <?= $statusFilter==='all'?'active':'' ?>">All</a>
+                    <a href="?status=overdue" class="filter-btn filter-btn-overdue <?= $statusFilter==='overdue'?'active':'' ?>" style="background: #dc3545; color: white;">
+                         Overdue
+                        <?php if ($overdueCount > 0): ?>
+                            <span class="notification-count"><?= $overdueCount ?></span>
+                        <?php endif; ?>
+                    </a>
+                    <a href="?status=new" class="filter-btn <?= $statusFilter==='new'?'active':'' ?>">New</a>
                     <a href="?status=in_progress" class="filter-btn <?= $statusFilter==='in_progress'?'active':'' ?>">In Progress</a>
                     <a href="?status=completed" class="filter-btn <?= $statusFilter==='completed'?'active':'' ?>">Completed</a>
                 </div>
@@ -346,8 +426,15 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
             $isPending   = $task['overall_status'] === 'pending';
             $hasSteps    = $task['total_steps'] > 0;
             $progress    = $hasSteps ? round(($task['completed_steps'] / $task['total_steps']) * 100) : 0;
+            $isOverdue   = !$isCompleted && $task['deadline'] && strtotime($task['deadline']) < strtotime('today');
+            $daysOverdue = $task['days_overdue'] ?? 0;
         ?>
-        <div class="task-card">
+        <div class="task-card <?= $isOverdue ? 'overdue' : '' ?>">
+            <?php if ($isOverdue): ?>
+                <div class="overdue-badge">
+                    ⚠️ <?= $daysOverdue ?> day<?= $daysOverdue > 1 ? 's' : '' ?> overdue
+                </div>
+            <?php endif; ?>
             <div class="task-header">
                 <div class="task-info">
                     <div class="task-client">
@@ -361,7 +448,15 @@ $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                     <div class="task-dates">
                         Started: <?= $task['start_date'] ? date('M d, Y', strtotime($task['start_date'])) : '—' ?> 
-                        | Deadline: <?= $task['deadline'] ? date('M d, Y', strtotime($task['deadline'])) : 'Not set' ?>
+                        | Deadline: 
+                        <?php if ($task['deadline']): ?>
+                            <span style="<?= $isOverdue ? 'color: #dc3545; font-weight: bold;' : '' ?>">
+                                <?= date('M d, Y', strtotime($task['deadline'])) ?>
+                                <?= $isOverdue ? ' ⚠️' : '' ?>
+                            </span>
+                        <?php else: ?>
+                            Not set
+                        <?php endif; ?>
                     </div>
                     <div class="task-contact">
                         <?= htmlspecialchars($task['email']) ?> 
