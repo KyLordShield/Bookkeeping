@@ -273,5 +273,8 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
         </div>
     </div>
     <script src="../partials/client-profile-modal.js"></script>
+
+    <?php include __DIR__ . '/../partials/chatbot_fab.php'; ?>
+    <script src="../partials/client-profile-modal.js"></script>
 </body>
 </html>

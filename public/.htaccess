@@ -1,5 +1,8 @@
 RewriteEngine On
 
+# Allow ajax folder to be accessed
+RewriteRule ^ajax/ - [L]
+
 # Allow static files (CSS, JS, images) to load directly
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]
