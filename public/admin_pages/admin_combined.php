@@ -1663,49 +1663,53 @@ $approvalCount        = count($pendingApprovals);
                 foreach ($yearMonthTotals as $mi => $mc) {
                     if ($mc > $peakMonthValue) { $peakMonthValue = $mc; $peakMonthIndex = $mi; }
                 }
-                $linePoints = [];
-                $w = 1000.0;
-                $h = 220.0;
-                $padX = 34.0;
-                $padTop = 18.0;
-                $padBottom = 24.0;
-                $allMonths = [];
-                foreach ($yearMonthTotals as $m => $count) {
-                    $allMonths[] = [
-                        'label' => $monthNames[$m],
-                        'value' => (int)$count,
-                        'is_forecast' => false,
-                    ];
+                $monthShort  = [1=>'Jan',2=>'Feb',3=>'Mar',4=>'Apr',5=>'May',6=>'Jun',7=>'Jul',8=>'Aug',9=>'Sep',10=>'Oct',11=>'Nov',12=>'Dec'];
+                $manilaNow = new DateTimeImmutable('now', new DateTimeZone('Asia/Manila'));
+                $serverCurrentMonth = (int)$manilaNow->format('n');
+                $serverCurrentYear = (int)$manilaNow->format('Y');
+                $currentMonth = ((int)$insightYear === $serverCurrentYear) ? $serverCurrentMonth : 12;
+
+                // Map history rows by month number for the selected year.
+                $histByMonth = [];
+                foreach ($monthlyHistory as $row) {
+                    $mk = (string)($row['month'] ?? '');
+                    if (strlen($mk) < 7) continue;
+                    if ((int)substr($mk, 0, 4) !== (int)$insightYear) continue;
+                    $histByMonth[(int)substr($mk, 5, 2)] = (int)($row['total_requests'] ?? 0);
                 }
+
+                // Map forecast values by month number.
+                $forecastByMonth = [];
                 foreach ($monthlyForecast as $fc) {
-                    $allMonths[] = [
-                        'label' => (string)($fc['month_label'] ?? 'Forecast'),
-                        'value' => (int)($fc['predicted_requests'] ?? 0),
-                        'is_forecast' => true,
-                    ];
+                    $mk = (string)($fc['month'] ?? $fc['month_label'] ?? '');
+                    if (preg_match('/(\d{4})-(\d{2})/', $mk, $mm)) {
+                        $fYear = (int)$mm[1];
+                        $fMonth = (int)$mm[2];
+                    } elseif (preg_match('/([A-Za-z]+)\s*(\d{4})/', $mk, $mm)) {
+                        $fYear = (int)$mm[2];
+                        $fMonth = (int)date('n', strtotime('1 ' . $mm[1] . ' 2000'));
+                    } else {
+                        $fYear = (int)$insightYear;
+                        $fMonth = (int)date('n', strtotime('1 ' . $mk . ' 2000'));
+                    }
+                    if ($fYear !== (int)$insightYear) continue;
+                    if ($fMonth >= 1 && $fMonth <= 12) {
+                        $forecastByMonth[$fMonth] = (int)($fc['predicted_requests'] ?? 0);
+                    }
                 }
-                $maxAllCount = 0;
-                foreach ($allMonths as $p) if ((int)$p['value'] > $maxAllCount) $maxAllCount = (int)$p['value'];
-                $histPoints = [];
-                $fcastPoints = [];
-                $pointDots = [];
-                $nPoints = max(1, count($allMonths));
-                foreach ($allMonths as $idx => $p) {
-                    $x = $padX + (($w - ($padX * 2)) * ($nPoints === 1 ? 0 : ($idx / ($nPoints - 1))));
-                    $ratio = $maxAllCount > 0 ? ((int)$p['value'] / $maxAllCount) : 0;
-                    $y = $h - $padBottom - (($h - $padTop - $padBottom) * $ratio);
-                    $pair = number_format($x, 2, '.', '') . ',' . number_format($y, 2, '.', '');
-                    if ($p['is_forecast']) $fcastPoints[] = $pair; else $histPoints[] = $pair;
-                    $pointDots[] = ['x' => $x, 'y' => $y, 'is_forecast' => $p['is_forecast']];
-                }
-                if (!empty($histPoints) && !empty($fcastPoints)) {
-                    $fcastPoints = [end($histPoints), ...$fcastPoints];
-                }
+
+                // Build two parallel 12-value arrays.
+                $histData = [];
+                $forecastData = [];
                 for ($m = 1; $m <= 12; $m++) {
-                    $x = $padX + (($w - ($padX * 2)) * (($m - 1) / 11));
-                    $ratio = $maxYearCount > 0 ? ($yearMonthTotals[$m] / $maxYearCount) : 0;
-                    $y = $h - $padBottom - (($h - $padTop - $padBottom) * $ratio);
-                    $linePoints[] = number_format($x, 2, '.', '') . ',' . number_format($y, 2, '.', '');
+                    if ($m <= $currentMonth) {
+                        $val = $histByMonth[$m] ?? 0;
+                        $histData[] = $val;
+                        $forecastData[] = ($m === $currentMonth) ? $val : null;
+                    } else {
+                        $histData[] = null;
+                        $forecastData[] = $forecastByMonth[$m] ?? null;
+                    }
                 }
             ?>
             <?php if (empty($monthlyHistory) && empty($monthlyForecast)): ?>
@@ -1738,28 +1742,123 @@ $approvalCount        = count($pendingApprovals);
                 </div>
 
                 <div class="line-chart-wrap" style="margin-bottom:12px;">
-                    <div class="task-client" style="margin-bottom:8px;">Monthly Analytics Line Graph (<?= (int)$insightYear ?>)</div>
+                    <div class="task-client" style="margin-bottom:8px;">
+                        Monthly Analytics Line Graph (<?= (int)$insightYear ?>)
+                    </div>
                     <div class="line-chart-legend">
                         <span class="legend-item"><span class="legend-line legend-historical"></span>Historical</span>
                         <span class="legend-item"><span class="legend-line legend-forecast"></span>Forecast (Next 1-3 Months)</span>
                     </div>
-                    <svg class="line-chart-svg" viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-label="Monthly request volume line chart">
-                        <line x1="34" y1="196" x2="966" y2="196" stroke="#cbd5e1" stroke-width="1" />
-                        <line x1="34" y1="18" x2="34" y2="196" stroke="#cbd5e1" stroke-width="1" />
-                        <?php if (!empty($histPoints)): ?>
-                            <polyline points="<?= htmlspecialchars(implode(' ', $histPoints)) ?>" fill="none" stroke="#1e3a8a" stroke-width="2.5" />
-                        <?php endif; ?>
-                        <?php if (!empty($fcastPoints)): ?>
-                            <polyline points="<?= htmlspecialchars(implode(' ', $fcastPoints)) ?>" fill="none" stroke="#b45309" stroke-width="2.4" stroke-dasharray="7 5" />
-                        <?php endif; ?>
-                        <?php foreach ($pointDots as $pt): ?>
-                            <circle cx="<?= htmlspecialchars(number_format($pt['x'], 2, '.', '')) ?>" cy="<?= htmlspecialchars(number_format($pt['y'], 2, '.', '')) ?>" r="3.2" fill="<?= $pt['is_forecast'] ? '#b45309' : '#1e3a8a' ?>" />
-                        <?php endforeach; ?>
-                    </svg>
-                    <div class="line-chart-labels">
-                        <?php foreach ($allMonths as $pt): ?><span><?= htmlspecialchars($pt['label']) ?></span><?php endforeach; ?>
+                    <div style="position:relative;width:100%;height:260px;">
+                        <canvas id="monthlyLineChart" role="img"
+                            aria-label="Monthly analytics for <?= (int)$insightYear ?>, historical up to <?= htmlspecialchars($monthShort[$currentMonth]) ?>, forecast continuing after">
+                            Historical data Jan-<?= htmlspecialchars($monthShort[$currentMonth]) ?> with forecast projection.
+                        </canvas>
                     </div>
                 </div>
+
+                <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+                <script>
+                (function() {
+                    const labels = <?= json_encode(array_values($monthShort)) ?>;
+                    const histData = <?= json_encode(array_values($histData)) ?>;
+                    const forecastData = <?= json_encode(array_values($forecastData)) ?>;
+                    const chartEl = document.getElementById('monthlyLineChart');
+                    if (!chartEl || typeof Chart === 'undefined') return;
+
+                    if (chartEl.__chartInstance) {
+                        chartEl.__chartInstance.destroy();
+                    }
+
+                    const pointValueLabelPlugin = {
+                        id: 'pointValueLabelPlugin',
+                        afterDatasetsDraw(chart) {
+                            const { ctx } = chart;
+                            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                                const meta = chart.getDatasetMeta(datasetIndex);
+                                if (meta.hidden) return;
+                                meta.data.forEach((point, i) => {
+                                    const raw = dataset.data[i];
+                                    if (raw === null || raw === undefined) return;
+                                    const value = Number(raw);
+                                    if (!Number.isFinite(value)) return;
+                                    ctx.save();
+                                    ctx.fillStyle = datasetIndex === 0 ? '#1e3a8a' : '#b45309';
+                                    ctx.font = '600 11px Inter, Arial, sans-serif';
+                                    ctx.textAlign = 'center';
+                                    ctx.textBaseline = 'bottom';
+                                    ctx.fillText(String(Math.round(value)), point.x, point.y - 8);
+                                    ctx.restore();
+                                });
+                            });
+                        }
+                    };
+
+                    chartEl.__chartInstance = new Chart(chartEl, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [
+                                {
+                                    label: 'Historical',
+                                    data: histData,
+                                    borderColor: '#1e3a8a',
+                                    backgroundColor: 'rgba(30,58,138,0.07)',
+                                    borderWidth: 2.5,
+                                    pointRadius: 4,
+                                    pointBackgroundColor: '#1e3a8a',
+                                    tension: 0.35,
+                                    fill: true,
+                                    spanGaps: false
+                                },
+                                {
+                                    label: 'Forecast',
+                                    data: forecastData,
+                                    borderColor: '#b45309',
+                                    backgroundColor: 'rgba(180,83,9,0.05)',
+                                    borderWidth: 2.2,
+                                    borderDash: [6, 4],
+                                    pointRadius: 4,
+                                    pointStyle: 'triangle',
+                                    pointBackgroundColor: '#b45309',
+                                    tension: 0.35,
+                                    fill: true,
+                                    spanGaps: false
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (ctx) => (ctx.datasetIndex === 0 ? 'Actual' : 'Forecast') + ': ' + Math.round(ctx.parsed.y) + ' requests'
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { color: 'rgba(100,116,139,0.1)' },
+                                    ticks: { color: '#64748b', font: { size: 11 }, autoSkip: false, maxRotation: 0 }
+                                },
+                                y: {
+                                    min: 0,
+                                    grid: { color: 'rgba(100,116,139,0.1)' },
+                                    ticks: {
+                                        color: '#64748b',
+                                        font: { size: 11 },
+                                        precision: 0,
+                                        callback: (value) => Number.isInteger(value) ? value : ''
+                                    }
+                                }
+                            }
+                        },
+                        plugins: [pointValueLabelPlugin]
+                    });
+                })();
+                </script>
 
                 <div class="task-card" style="margin-bottom:12px;">
                     <div class="task-client" style="margin-bottom:10px;">Monthly Demand (<?= (int)$insightYear ?>)</div>
