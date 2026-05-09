@@ -11,7 +11,18 @@ require_once '../../classes/Staff.php';
 
 $staffObj = new Staff($cloudinary);
 
-$allStaff = $staffObj->getAllStaffWithStats();
+$page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+$viewMode = $_GET['view'] ?? 'cards';
+$viewMode = in_array($viewMode, ['cards', 'table']) ? $viewMode : 'cards';
+$pageSize = 3;
+$totalStaff = $staffObj->getStaffCount();
+$totalPages = max(1, (int) ceil($totalStaff / $pageSize));
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+$offset = ($page - 1) * $pageSize;
+
+$allStaff = $staffObj->getStaffWithStatsPaginated($pageSize, $offset);
 
 $modalStaff = null;
 $modalTasks = [];
@@ -67,7 +78,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    header("Location: admin_staff_manage.php");
+    $redirectPage = isset($_POST['page']) && is_numeric($_POST['page']) ? (int) $_POST['page'] : 1;
+    $redirectView = isset($_POST['view']) && in_array($_POST['view'], ['cards', 'table']) ? $_POST['view'] : 'cards';
+    header("Location: admin_staff_manage.php?page={$redirectPage}&view={$redirectView}");
     exit;
 }
 
@@ -119,6 +132,160 @@ if (isset($_GET['edit_staff'])) {
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
         .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+
+        .view-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 14px 0 20px;
+            flex-wrap: wrap;
+        }
+
+        .view-toggle a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid #dcdcdc;
+            background: #ffffff;
+            color: #333;
+            text-decoration: none;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+            font-weight: 600;
+        }
+
+        .view-toggle a.active {
+            background: #3498db;
+            color: #ffffff;
+            border-color: #2980b9;
+        }
+
+        .staff-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 18px;
+            margin-top: 20px;
+        }
+
+        .staff-card {
+            background: #ffffff;
+            border: 1px solid #e1e5ea;
+            border-radius: 18px;
+            padding: 22px;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.04);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .staff-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 32px rgba(0,0,0,0.08);
+        }
+
+        .staff-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .staff-info {
+            min-width: 0;
+        }
+
+        .staff-details {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px 20px;
+        }
+
+        .staff-detail-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .detail-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .staff-card button {
+            width: auto;
+            margin-bottom: 8px;
+        }
+
+        .staff-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: #ffffff;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.05);
+        }
+
+        .staff-table th,
+        .staff-table td {
+            padding: 16px 18px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: middle;
+        }
+
+        .staff-table th {
+            background: #f3f6fb;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .staff-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .staff-row .staff-avatar {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .staff-row .staff-avatar:hover {
+            transform: scale(1.05);
+        }
+
+        .staff-name {
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .staff-email {
+            color: #7f8c8d;
+            font-size: 0.95em;
+        }
+
+        .staff-table tbody tr:hover {
+            background: #fbfbff;
+        }
+
+        .staff-table td:last-child {
+            white-space: nowrap;
+        }
+
+        .staff-table button {
+            margin-bottom: 6px;
+        }
 
         .staff-avatar, .modal-staff-avatar {
             width: 70px;
@@ -186,6 +353,38 @@ if (isset($_GET['edit_staff'])) {
         max-height: 70vh !important;
     }
 }
+
+        .pagination-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin: 24px 0;
+        }
+
+        .pagination-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #333;
+            text-decoration: none;
+            border: 1px solid #dcdcdc;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .pagination-link:hover {
+            background: #3498db;
+            color: #ffffff;
+        }
+
+        .pagination-link.active {
+            background: #3498db;
+            color: #ffffff;
+            border-color: #2980b9;
+        }
     </style>
 </head>
 <body>
@@ -200,60 +399,125 @@ if (isset($_GET['edit_staff'])) {
 
            <!-- <button class="add-staff-btn" onclick="openAddEditModal('add')">+ Add New Staff</button> -->
 
-            <div class="staff-grid">
-                <?php if (empty($allStaff)): ?>
-                    <p>No staff members found.</p>
-                <?php else: ?>
-                    <?php foreach ($allStaff as $staff): 
-                        $fullName = $staff['first_name'] . ' ' . $staff['last_name'];
-                        $workload = $staffObj->getWorkloadLevel($staff['active_tasks_count']);
-                        $workloadClass = $staffObj->getWorkloadClass($workload);
-                        $avatarUrl = !empty($staff['profile_picture']) ? htmlspecialchars($staff['profile_picture']) : '../assets/default-avatar.png';
-                    ?>
-                        <div class="staff-card">
-                            <div class="staff-header">
-                                <div class="staff-avatar" 
-                                     style="background-image: url('<?= $avatarUrl ?>');"
-                                     onclick="previewImage('<?= $avatarUrl ?>', '<?= htmlspecialchars($fullName) ?>')">
-                                </div>
-                                <div class="staff-info">
-                                    <div class="staff-name"><?= htmlspecialchars($fullName) ?></div>
-                                    <div class="staff-email"><?= htmlspecialchars($staff['email']) ?></div>
-                                </div>
-                            </div>
-                            <div class="staff-details">
-                                <div class="staff-detail-row">
-                                    <span class="detail-label">Contact:</span>
-                                    <span class="detail-value"><?= htmlspecialchars($staff['phone'] ?? 'N/A') ?></span>
-                                </div>
-                                <div class="staff-detail-row">
-                                    <span class="detail-label">Position:</span>
-                                    <span class="detail-value"><?= htmlspecialchars($staff['position'] ?? 'N/A') ?></span>
-                                </div>
-                                <div class="staff-detail-row">
-                                    <span class="detail-label">Active Tasks:</span>
-                                    <span class="detail-value"><?= $staff['active_tasks_count'] ?></span>
-                                </div>
-                                <div class="staff-detail-row">
-                                    <span class="detail-label">Workload:</span>
-                                    <span class="detail-value workload-<?= $workloadClass ?>"><?= $workload ?></span>
-                                </div>
-                            </div>
-                            <div style="margin-top: 15px; display: flex; gap: 8px;">
-                                <button class="view-details-btn" onclick="openStaffModal(<?= $staff['staff_id'] ?>)">
-                                    View Tasks
-                                </button>
-                                <button class="edit-btn" onclick="openAddEditModal('edit', <?= $staff['staff_id'] ?>)">
-                                    Edit
-                                </button>
-                                <button class="delete-btn" onclick="deleteStaff(<?= $staff['staff_id'] ?>)">
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+            <div class="view-toggle">
+                <span>Display:</span>
+                <a class="<?= $viewMode === 'cards' ? 'active' : '' ?>" href="admin_staff_manage.php?page=<?= $page ?>&view=cards">Card View</a>
+                <a class="<?= $viewMode === 'table' ? 'active' : '' ?>" href="admin_staff_manage.php?page=<?= $page ?>&view=table">Table View</a>
             </div>
+
+            <?php if (empty($allStaff)): ?>
+                <p>No staff members found.</p>
+            <?php else: ?>
+                <?php if ($viewMode === 'cards'): ?>
+                    <div class="staff-grid">
+                        <?php foreach ($allStaff as $staff): 
+                            $fullName = $staff['first_name'] . ' ' . $staff['last_name'];
+                            $workload = $staffObj->getWorkloadLevel($staff['active_tasks_count']);
+                            $workloadClass = $staffObj->getWorkloadClass($workload);
+                            $avatarUrl = !empty($staff['profile_picture']) ? htmlspecialchars($staff['profile_picture']) : '../assets/default-avatar.png';
+                        ?>
+                            <div class="staff-card">
+                                <div class="staff-header">
+                                    <div class="staff-avatar" 
+                                         style="background-image: url('<?= $avatarUrl ?>');"
+                                         onclick="previewImage('<?= $avatarUrl ?>', '<?= htmlspecialchars($fullName) ?>')">
+                                    </div>
+                                    <div class="staff-info">
+                                        <div class="staff-name"><?= htmlspecialchars($fullName) ?></div>
+                                        <div class="staff-email"><?= htmlspecialchars($staff['email']) ?></div>
+                                    </div>
+                                </div>
+                                <div class="staff-details">
+                                    <div class="staff-detail-row">
+                                        <span class="detail-label">Contact:</span>
+                                        <span class="detail-value"><?= htmlspecialchars($staff['phone'] ?? 'N/A') ?></span>
+                                    </div>
+                                    <div class="staff-detail-row">
+                                        <span class="detail-label">Position:</span>
+                                        <span class="detail-value"><?= htmlspecialchars($staff['position'] ?? 'N/A') ?></span>
+                                    </div>
+                                    <div class="staff-detail-row">
+                                        <span class="detail-label">Active Tasks:</span>
+                                        <span class="detail-value"><?= $staff['active_tasks_count'] ?></span>
+                                    </div>
+                                    <div class="staff-detail-row">
+                                        <span class="detail-label">Workload:</span>
+                                        <span class="detail-value workload-<?= $workloadClass ?>"><?= $workload ?></span>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 15px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button class="view-details-btn" onclick="openStaffModal(<?= $staff['staff_id'] ?>)">View Tasks</button>
+                                    <button class="edit-btn" onclick="openAddEditModal('edit', <?= $staff['staff_id'] ?>)">Edit</button>
+                                    <button class="delete-btn" onclick="deleteStaff(<?= $staff['staff_id'] ?>)">Delete</button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="table-wrapper">
+                        <table class="staff-table">
+                            <thead>
+                                <tr>
+                                    <th>Staff</th>
+                                    <th>Contact</th>
+                                    <th>Position</th>
+                                    <th>Active Tasks</th>
+                                    <th>Workload</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($allStaff as $staff): 
+                                    $fullName = $staff['first_name'] . ' ' . $staff['last_name'];
+                                    $workload = $staffObj->getWorkloadLevel($staff['active_tasks_count']);
+                                    $workloadClass = $staffObj->getWorkloadClass($workload);
+                                    $avatarUrl = !empty($staff['profile_picture']) ? htmlspecialchars($staff['profile_picture']) : '../assets/default-avatar.png';
+                                ?>
+                                    <tr>
+                                        <td>
+                                            <div class="staff-row">
+                                                <div class="staff-avatar" 
+                                                     style="background-image: url('<?= $avatarUrl ?>');"
+                                                     onclick="previewImage('<?= $avatarUrl ?>', '<?= htmlspecialchars($fullName) ?>')">
+                                                </div>
+                                                <div>
+                                                    <div class="staff-name"><?= htmlspecialchars($fullName) ?></div>
+                                                    <div class="staff-email"><?= htmlspecialchars($staff['email']) ?></div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td><?= htmlspecialchars($staff['phone'] ?? 'N/A') ?></td>
+                                        <td><?= htmlspecialchars($staff['position'] ?? 'N/A') ?></td>
+                                        <td><?= $staff['active_tasks_count'] ?></td>
+                                        <td><span class="workload-<?= $workloadClass ?>"><?= $workload ?></span></td>
+                                        <td>
+                                            <button class="view-details-btn" onclick="openStaffModal(<?= $staff['staff_id'] ?>)">View Tasks</button>
+                                            <button class="edit-btn" onclick="openAddEditModal('edit', <?= $staff['staff_id'] ?>)">Edit</button>
+                                            <button class="delete-btn" onclick="deleteStaff(<?= $staff['staff_id'] ?>)">Delete</button>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <?php if ($totalPages > 1): ?>
+                <div class="pagination-container">
+                    <?php if ($page > 1): ?>
+                        <a class="pagination-link" href="admin_staff_manage.php?page=<?= $page - 1 ?>&view=<?= $viewMode ?>">&laquo; Previous</a>
+                    <?php endif; ?>
+
+                    <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+                        <a class="pagination-link <?= $p === $page ? 'active' : '' ?>" href="admin_staff_manage.php?page=<?= $p ?>&view=<?= $viewMode ?>"><?= $p ?></a>
+                    <?php endfor; ?>
+
+                    <?php if ($page < $totalPages): ?>
+                        <a class="pagination-link" href="admin_staff_manage.php?page=<?= $page + 1 ?>&view=<?= $viewMode ?>">Next &raquo;</a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -315,7 +579,9 @@ if (isset($_GET['edit_staff'])) {
 
             <form method="POST" id="staffForm" enctype="multipart/form-data">
                 <input type="hidden" name="action" id="formAction" value="add">
-                <input type="hidden" name="staff_id" id="formStaffId">
+            <input type="hidden" name="staff_id" id="formStaffId">
+            <input type="hidden" name="page" value="<?= $page ?>">
+            <input type="hidden" name="view" value="<?= $viewMode ?>">
 
                 <div class="form-group">
                     <label>First Name *</label>
@@ -358,9 +624,12 @@ if (isset($_GET['edit_staff'])) {
     <script>
         let currentStaffId = null;
 
+        const currentPage = <?= $page ?>;
+        const currentView = '<?= $viewMode ?>';
+
         function openStaffModal(staffId) {
             currentStaffId = staffId;
-            window.location.href = `admin_staff_manage.php?view_staff=${staffId}`;
+            window.location.href = `admin_staff_manage.php?view_staff=${staffId}&page=${currentPage}&view=${currentView}`;
         }
 
         function filterTasks(status) {
@@ -369,7 +638,7 @@ if (isset($_GET['edit_staff'])) {
                 currentStaffId = params.get('view_staff');
             }
             if (!currentStaffId) return;
-            let url = `admin_staff_manage.php?view_staff=${currentStaffId}`;
+            let url = `admin_staff_manage.php?view_staff=${currentStaffId}&page=${currentPage}&view=${currentView}`;
             if (status !== 'all') url += `&status=${status}`;
             window.location.href = url;
         }
@@ -399,7 +668,7 @@ if (isset($_GET['edit_staff'])) {
                 title.textContent = 'Edit Staff';
                 document.getElementById('formAction').value = 'edit';
                 document.getElementById('formStaffId').value = staffId;
-                window.location.href = `admin_staff_manage.php?edit_staff=${staffId}`;
+                window.location.href = `admin_staff_manage.php?edit_staff=${staffId}&page=${currentPage}&view=${currentView}`;
                 return;
             }
             modal.classList.add('active');
@@ -421,6 +690,8 @@ if (isset($_GET['edit_staff'])) {
                     form.innerHTML = `
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="staff_id" value="${staffId}">
+                        <input type="hidden" name="page" value="${currentPage}">
+                        <input type="hidden" name="view" value="${currentView}">
                     `;
                     document.body.appendChild(form);
                     form.submit();

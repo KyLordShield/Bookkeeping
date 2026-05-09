@@ -50,6 +50,51 @@ class Staff
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    public function getStaffWithStatsPaginated(int $limit, int $offset)
+    {
+        $query = "
+            SELECT 
+                s.staff_id,
+                s.first_name,
+                s.last_name,
+                s.email,
+                s.phone,
+                s.position,
+                s.profile_picture,
+                COALESCE(active.active_count, 0) AS active_tasks_count,
+                COALESCE(completed.count_completed, 0) AS completed_tasks_count
+            FROM staff s
+            LEFT JOIN (
+                SELECT assigned_staff_id, COUNT(*) AS active_count
+                FROM client_service_requirements
+                WHERE status IN ('pending', 'in_progress', 'on_hold')
+                GROUP BY assigned_staff_id
+            ) active ON active.assigned_staff_id = s.staff_id
+            LEFT JOIN (
+                SELECT assigned_staff_id, COUNT(*) AS count_completed
+                FROM client_service_requirements
+                WHERE status = 'completed'
+                GROUP BY assigned_staff_id
+            ) completed ON completed.assigned_staff_id = s.staff_id
+            ORDER BY s.first_name, s.last_name
+            LIMIT :limit OFFSET :offset
+        ";
+
+        $stmt = $this->pdo->prepare($query);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getStaffCount(): int
+    {
+        $query = "SELECT COUNT(*) FROM staff";
+        $stmt = $this->pdo->prepare($query);
+        $stmt->execute();
+        return (int) $stmt->fetchColumn();
+    }
+
     /**
      * Get staff by ID
      */

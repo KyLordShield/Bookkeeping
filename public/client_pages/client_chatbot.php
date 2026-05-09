@@ -71,6 +71,7 @@ $clientName = $client
 
                 <!-- Welcome message -->
                 <div class="chat-msg chat-msg--bot">
+                    <div class="chat-msg-avatar-placeholder">AI</div>
                     <div class="chat-msg-bubble">
                         Hi <strong><?= $clientName ?></strong>! I'm the <strong>Approvative Assistant</strong>. 
                         I can help you with questions about our services, document requirements, 
@@ -169,6 +170,13 @@ function appendMessage(text, role) {
 
     const msgDiv = document.createElement('div');
     msgDiv.className = `chat-msg chat-msg--${role === 'user' ? 'user' : 'bot'}`;
+
+    if (role !== 'user') {
+        const avatar = document.createElement('div');
+        avatar.className = 'chat-msg-avatar-placeholder';
+        avatar.textContent = 'AI';
+        msgDiv.appendChild(avatar);
+    }
 
     const bubble = document.createElement('div');
     bubble.className = 'chat-msg-bubble';
