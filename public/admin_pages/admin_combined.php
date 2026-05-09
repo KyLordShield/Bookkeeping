@@ -208,6 +208,40 @@ function runPythonRequirementMiner(array $payload): ?array
     return null;
 }
 
+function runPythonDemandForecastMiner(array $payload): ?array
+{
+    $scriptPath = realpath(__DIR__ . '/../../scripts/monthly_demand_miner.py');
+    if (!$scriptPath || !is_file($scriptPath)) return null;
+
+    $tempInput = tempnam(sys_get_temp_dir(), 'demandmine_');
+    if (!$tempInput) return null;
+    if (file_put_contents($tempInput, json_encode($payload, JSON_UNESCAPED_UNICODE)) === false) {
+        @unlink($tempInput);
+        return null;
+    }
+
+    $commands = [
+        'python ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
+        'py -3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
+    ];
+
+    foreach ($commands as $cmd) {
+        $output = [];
+        $exitCode = 1;
+        exec($cmd . ' 2>&1', $output, $exitCode);
+        if ($exitCode !== 0) continue;
+
+        $decoded = json_decode(implode("\n", $output), true);
+        if (is_array($decoded)) {
+            @unlink($tempInput);
+            return $decoded;
+        }
+    }
+
+    @unlink($tempInput);
+    return null;
+}
+
 $txRows = $pdo->query("
     SELECT cs.service_id, cs.client_service_id, csr.requirement_name
     FROM client_services cs
@@ -353,6 +387,50 @@ foreach ($stepSuggestionsByService as $sid => $suggestions) {
         $stepSuggestionsByService[$sid] = $fallbackSuggestions;
     }
 }
+
+$monthlyRequestRows = $pdo->query("
+    SELECT DATE_FORMAT(COALESCE(sr.requested_at, sr.preferred_date), '%Y-%m-01') AS month_start,
+           sr.service_id,
+           COUNT(*) AS request_count
+    FROM service_requests sr
+    WHERE COALESCE(sr.requested_at, sr.preferred_date) IS NOT NULL
+    GROUP BY month_start, sr.service_id
+    ORDER BY month_start ASC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$monthServiceCounts = [];
+$availableYearsMap = [];
+foreach ($monthlyRequestRows as $row) {
+    $sid = (int)$row['service_id'];
+    $month = (string)$row['month_start'];
+    $count = (int)$row['request_count'];
+    if ($sid <= 0 || $month === '') continue;
+
+    if (!isset($monthServiceCounts[$month])) $monthServiceCounts[$month] = [];
+    $monthServiceCounts[$month][(string)$sid] = $count;
+    $yearKey = (int)substr($month, 0, 4);
+    if ($yearKey > 0) $availableYearsMap[$yearKey] = true;
+}
+
+$currentYear = (int)date('Y');
+$insightYear = (int)($_GET['insight_year'] ?? $currentYear);
+if ($insightYear <= 0) $insightYear = $currentYear;
+$availableYears = array_keys($availableYearsMap);
+sort($availableYears);
+if (!in_array($insightYear, $availableYears, true)) {
+    $insightYear = !empty($availableYears) ? max($availableYears) : $currentYear;
+}
+
+$demandMining = runPythonDemandForecastMiner([
+    'month_service_counts' => $monthServiceCounts,
+    'service_names' => array_map('strval', $serviceNames),
+    'current_month' => date('Y-m-01'),
+    'anchor_year' => $insightYear,
+    'forecast_horizon' => 3,
+]);
+
+$monthlyHistory = is_array($demandMining['history'] ?? null) ? $demandMining['history'] : [];
+$monthlyForecast = is_array($demandMining['forecast'] ?? null) ? $demandMining['forecast'] : [];
 
 $clientServiceRows = [];
 foreach ($clients as $client) {
@@ -841,6 +919,32 @@ $approvalCount        = count($pendingApprovals);
         gap: 10px;
     }
     .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--c-border); }
+    .analytics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .analytics-kpi { border: 1px solid var(--c-border); background: #fff; padding: 12px; }
+    .analytics-kpi-label { font-size: .7rem; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+    .analytics-kpi-value { margin-top: 6px; font-size: 1.1rem; color: var(--c-text-head); font-weight: 700; }
+    .analytics-kpi-sub { margin-top: 3px; font-size: .74rem; color: var(--c-text-muted); }
+    .line-chart-wrap { border: 1px solid var(--c-border); background: #fff; padding: 12px; }
+    .line-chart-svg { width: 100%; height: 220px; display: block; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
+    .line-chart-labels { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); margin-top: 6px; font-size: .68rem; color: var(--c-text-muted); text-align: center; }
+    .line-chart-legend { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; font-size: .73rem; color: var(--c-text-muted); font-weight: 600; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-line { width: 20px; height: 0; border-top: 2px solid; }
+    .legend-historical { border-top-color: #1e3a8a; }
+    .legend-forecast { border-top-color: #b45309; border-top-style: dashed; }
+    .forecast-card { border: 1px solid var(--c-border); background: #fff; padding: 12px; margin-bottom: 10px; }
+    .forecast-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .forecast-month { font-size: .95rem; color: var(--c-text-head); font-weight: 700; }
+    .confidence-badge { display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid var(--c-border); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .confidence-high { color: #0f766e; border-color: #99f6e4; background: #f0fdfa; }
+    .confidence-low { color: #92400e; border-color: #fde68a; background: #fffbeb; }
+    .forecast-meta { font-size: .78rem; color: var(--c-text-muted); margin-bottom: 7px; }
+    .forecast-services { font-size: .8rem; color: var(--c-text-body); margin-bottom: 7px; }
+    .forecast-advisory { font-size: .8rem; color: var(--c-text-muted); border-top: 1px solid var(--c-border); padding-top: 7px; }
+    .insight-auto-row td { background: #f0fdfa; }
+    .auto-flag { display: inline-flex; align-items: center; padding: 2px 7px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; border: 1px solid #99f6e4; color: #0f766e; background: #ecfeff; }
+    .manual-flag { display: inline-flex; align-items: center; padding: 2px 7px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; border: 1px solid var(--c-border); color: var(--c-text-muted); background: #fff; }
+    @media (max-width: 1040px) { .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
     /* ─── Modals ─────────────────────────────────────────────────────────── */
     .modal-overlay {
@@ -1520,10 +1624,222 @@ $approvalCount        = count($pendingApprovals);
         <div id="tab-insights" class="tab-panel">
             <div class="actions-row" style="margin-bottom:14px;">
                 <div class="filter-strip">
-                    <span class="filter-strip-label">Data-Mined Requirement Insights</span>
+                    <span class="filter-strip-label">Data-Mined Insights</span>
                 </div>
+                <form method="get" style="display:flex;gap:8px;align-items:center;">
+                    <input type="hidden" name="tab" value="insights">
+                    <label for="insightYear" style="font-size:.75rem;color:var(--c-text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Year</label>
+                    <select id="insightYear" name="insight_year" style="padding:7px 10px;border:1px solid var(--c-border);font-size:.82rem;background:var(--c-surface);">
+                        <?php if (empty($availableYears)): ?>
+                            <option value="<?= (int)$insightYear ?>"><?= (int)$insightYear ?></option>
+                        <?php else: ?>
+                            <?php foreach ($availableYears as $yr): ?>
+                                <option value="<?= (int)$yr ?>" <?= (int)$yr === (int)$insightYear ? 'selected' : '' ?>><?= (int)$yr ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+                </form>
             </div>
 
+            <div class="section-divider">Monthly Demand Forecast (1-3 Months)</div>
+            <?php
+                $yearMonthTotals = array_fill(1, 12, 0);
+                foreach ($monthlyHistory as $row) {
+                    $mk = (string)($row['month'] ?? '');
+                    if (strlen($mk) < 7) continue;
+                    $mnum = (int)substr($mk, 5, 2);
+                    if ($mnum >= 1 && $mnum <= 12) {
+                        $yearMonthTotals[$mnum] = (int)($row['total_requests'] ?? 0);
+                    }
+                }
+                $maxYearCount = max($yearMonthTotals ?: [0]);
+                $monthNames = [1=>'Jan',2=>'Feb',3=>'Mar',4=>'Apr',5=>'May',6=>'Jun',7=>'Jul',8=>'Aug',9=>'Sep',10=>'Oct',11=>'Nov',12=>'Dec'];
+                $totalYearRequests = array_sum($yearMonthTotals);
+                $activeMonths = count(array_filter($yearMonthTotals, static fn($v) => (int)$v > 0));
+                $avgPerActiveMonth = $activeMonths > 0 ? round($totalYearRequests / $activeMonths, 1) : 0;
+                $peakMonthIndex = 1;
+                $peakMonthValue = 0;
+                foreach ($yearMonthTotals as $mi => $mc) {
+                    if ($mc > $peakMonthValue) { $peakMonthValue = $mc; $peakMonthIndex = $mi; }
+                }
+                $linePoints = [];
+                $w = 1000.0;
+                $h = 220.0;
+                $padX = 34.0;
+                $padTop = 18.0;
+                $padBottom = 24.0;
+                $allMonths = [];
+                foreach ($yearMonthTotals as $m => $count) {
+                    $allMonths[] = [
+                        'label' => $monthNames[$m],
+                        'value' => (int)$count,
+                        'is_forecast' => false,
+                    ];
+                }
+                foreach ($monthlyForecast as $fc) {
+                    $allMonths[] = [
+                        'label' => (string)($fc['month_label'] ?? 'Forecast'),
+                        'value' => (int)($fc['predicted_requests'] ?? 0),
+                        'is_forecast' => true,
+                    ];
+                }
+                $maxAllCount = 0;
+                foreach ($allMonths as $p) if ((int)$p['value'] > $maxAllCount) $maxAllCount = (int)$p['value'];
+                $histPoints = [];
+                $fcastPoints = [];
+                $pointDots = [];
+                $nPoints = max(1, count($allMonths));
+                foreach ($allMonths as $idx => $p) {
+                    $x = $padX + (($w - ($padX * 2)) * ($nPoints === 1 ? 0 : ($idx / ($nPoints - 1))));
+                    $ratio = $maxAllCount > 0 ? ((int)$p['value'] / $maxAllCount) : 0;
+                    $y = $h - $padBottom - (($h - $padTop - $padBottom) * $ratio);
+                    $pair = number_format($x, 2, '.', '') . ',' . number_format($y, 2, '.', '');
+                    if ($p['is_forecast']) $fcastPoints[] = $pair; else $histPoints[] = $pair;
+                    $pointDots[] = ['x' => $x, 'y' => $y, 'is_forecast' => $p['is_forecast']];
+                }
+                if (!empty($histPoints) && !empty($fcastPoints)) {
+                    $fcastPoints = [end($histPoints), ...$fcastPoints];
+                }
+                for ($m = 1; $m <= 12; $m++) {
+                    $x = $padX + (($w - ($padX * 2)) * (($m - 1) / 11));
+                    $ratio = $maxYearCount > 0 ? ($yearMonthTotals[$m] / $maxYearCount) : 0;
+                    $y = $h - $padBottom - (($h - $padTop - $padBottom) * $ratio);
+                    $linePoints[] = number_format($x, 2, '.', '') . ',' . number_format($y, 2, '.', '');
+                }
+            ?>
+            <?php if (empty($monthlyHistory) && empty($monthlyForecast)): ?>
+                <div class="empty-state" style="margin-bottom:14px;">
+                    <h3>Monthly analytics unavailable</h3>
+                    <p>Historical month-by-month demand and forecasting will appear once request records are available.</p>
+                </div>
+            <?php else: ?>
+                <div class="analytics-grid">
+                    <div class="analytics-kpi">
+                        <div class="analytics-kpi-label">Selected Year</div>
+                        <div class="analytics-kpi-value"><?= (int)$insightYear ?></div>
+                        <div class="analytics-kpi-sub">Month-based demand analytics</div>
+                    </div>
+                    <div class="analytics-kpi">
+                        <div class="analytics-kpi-label">Total Requests</div>
+                        <div class="analytics-kpi-value"><?= (int)$totalYearRequests ?></div>
+                        <div class="analytics-kpi-sub">Across Jan-Dec timeline</div>
+                    </div>
+                    <div class="analytics-kpi">
+                        <div class="analytics-kpi-label">Average / Active Month</div>
+                        <div class="analytics-kpi-value"><?= number_format((float)$avgPerActiveMonth, 1) ?></div>
+                        <div class="analytics-kpi-sub">Computed from non-zero months</div>
+                    </div>
+                    <div class="analytics-kpi">
+                        <div class="analytics-kpi-label">Peak Month</div>
+                        <div class="analytics-kpi-value"><?= htmlspecialchars($monthNames[$peakMonthIndex]) ?></div>
+                        <div class="analytics-kpi-sub"><?= (int)$peakMonthValue ?> requests</div>
+                    </div>
+                </div>
+
+                <div class="line-chart-wrap" style="margin-bottom:12px;">
+                    <div class="task-client" style="margin-bottom:8px;">Monthly Analytics Line Graph (<?= (int)$insightYear ?>)</div>
+                    <div class="line-chart-legend">
+                        <span class="legend-item"><span class="legend-line legend-historical"></span>Historical</span>
+                        <span class="legend-item"><span class="legend-line legend-forecast"></span>Forecast (Next 1-3 Months)</span>
+                    </div>
+                    <svg class="line-chart-svg" viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-label="Monthly request volume line chart">
+                        <line x1="34" y1="196" x2="966" y2="196" stroke="#cbd5e1" stroke-width="1" />
+                        <line x1="34" y1="18" x2="34" y2="196" stroke="#cbd5e1" stroke-width="1" />
+                        <?php if (!empty($histPoints)): ?>
+                            <polyline points="<?= htmlspecialchars(implode(' ', $histPoints)) ?>" fill="none" stroke="#1e3a8a" stroke-width="2.5" />
+                        <?php endif; ?>
+                        <?php if (!empty($fcastPoints)): ?>
+                            <polyline points="<?= htmlspecialchars(implode(' ', $fcastPoints)) ?>" fill="none" stroke="#b45309" stroke-width="2.4" stroke-dasharray="7 5" />
+                        <?php endif; ?>
+                        <?php foreach ($pointDots as $pt): ?>
+                            <circle cx="<?= htmlspecialchars(number_format($pt['x'], 2, '.', '')) ?>" cy="<?= htmlspecialchars(number_format($pt['y'], 2, '.', '')) ?>" r="3.2" fill="<?= $pt['is_forecast'] ? '#b45309' : '#1e3a8a' ?>" />
+                        <?php endforeach; ?>
+                    </svg>
+                    <div class="line-chart-labels">
+                        <?php foreach ($allMonths as $pt): ?><span><?= htmlspecialchars($pt['label']) ?></span><?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="task-card" style="margin-bottom:12px;">
+                    <div class="task-client" style="margin-bottom:10px;">Monthly Demand (<?= (int)$insightYear ?>)</div>
+                    <table class="req-table">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>Total Requests</th>
+                                <th>Most Demanded Services</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($monthlyHistory)): ?>
+                                <tr>
+                                    <td colspan="3" style="font-style:italic;color:var(--c-text-muted);">No month-by-month entries found for <?= (int)$insightYear ?> yet.</td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($monthlyHistory as $row): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($row['month_label'] ?? ($row['month'] ?? '—')) ?></td>
+                                        <td><?= (int)($row['total_requests'] ?? 0) ?></td>
+                                        <td style="font-size:.8rem;color:var(--c-text-muted);">
+                                            <?php
+                                                $top = is_array($row['top_services'] ?? null) ? $row['top_services'] : [];
+                                                if (empty($top)) {
+                                                    echo 'No dominant service identified.';
+                                                } else {
+                                                    $parts = [];
+                                                    foreach ($top as $svc) {
+                                                        $parts[] = htmlspecialchars((string)($svc['service_name'] ?? '—')) . ' (' . (int)($svc['count'] ?? 0) . ')';
+                                                    }
+                                                    echo implode(', ', $parts);
+                                                }
+                                            ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="task-card" style="margin-bottom:12px;">
+                    <div class="task-client" style="margin-bottom:10px;">Forecast Outlook (Next 1-3 Months)</div>
+                    <?php if (empty($monthlyForecast)): ?>
+                        <div style="font-size:.82rem;color:var(--c-text-muted);font-style:italic;">Forecast not available yet.</div>
+                    <?php else: ?>
+                        <?php foreach ($monthlyForecast as $forecast): ?>
+                            <?php
+                                $lvl = (string)($forecast['level'] ?? 'steady');
+                                $confidence = (string)($forecast['confidence_level'] ?? 'high');
+                                $svcList = is_array($forecast['predicted_top_services'] ?? null) ? $forecast['predicted_top_services'] : [];
+                            ?>
+                            <div class="forecast-card">
+                                <div class="forecast-top">
+                                    <div class="forecast-month">
+                                        <?= htmlspecialchars($forecast['month_label'] ?? ($forecast['month'] ?? '—')) ?>
+                                        &middot;
+                                        <?= (int)($forecast['predicted_requests'] ?? 0) ?> projected requests
+                                    </div>
+                                    <div style="display:flex;gap:6px;align-items:center;">
+                                        <span class="badge <?= $lvl === 'busy' ? 'badge-in_progress' : ($lvl === 'light' ? 'badge-on_hold' : 'badge-completed') ?>"><?= ucfirst($lvl) ?></span>
+                                        <span class="confidence-badge <?= $confidence === 'low' ? 'confidence-low' : 'confidence-high' ?>">
+                                            <?= $confidence === 'low' ? 'Low Confidence' : 'High Confidence' ?>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="forecast-meta"><?= htmlspecialchars((string)($forecast['confidence_note'] ?? '')) ?></div>
+                                <div class="forecast-services">
+                                    Likely high-demand services:
+                                    <strong><?= htmlspecialchars(!empty($svcList) ? implode(', ', $svcList) : 'No dominant services projected.') ?></strong>
+                                </div>
+                                <div class="forecast-advisory"><?= htmlspecialchars($forecast['message'] ?? 'No advisory generated.') ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="section-divider">Requirement Pattern Mining</div>
             <?php if (empty($stepInsightsByService)): ?>
                 <div class="empty-state">
                     <h3>No historical data yet</h3>
@@ -1541,15 +1857,23 @@ $approvalCount        = count($pendingApprovals);
                                     <th>Requirement Pattern</th>
                                     <th>Support Count</th>
                                     <th>Confidence</th>
+                                    <th>Auto-Generate</th>
                                     <th>Interpretation</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                <?php $autoReq = array_flip($stepSuggestionsByService[(int)$sid] ?? []); ?>
                                 <?php foreach ($insights as $item): ?>
-                                    <tr>
+                                    <?php $isAuto = isset($autoReq[(string)$item['requirement_name']]); ?>
+                                    <tr class="<?= $isAuto ? 'insight-auto-row' : '' ?>">
                                         <td><?= htmlspecialchars($item['requirement_name']) ?></td>
                                         <td><?= (int)$item['usage_count'] ?></td>
                                         <td><?= number_format((float)$item['confidence_pct'], 1) ?>%</td>
+                                        <td>
+                                            <span class="<?= $isAuto ? 'auto-flag' : 'manual-flag' ?>">
+                                                <?= $isAuto ? 'Included' : 'Optional' ?>
+                                            </span>
+                                        </td>
                                         <td style="font-size:.8rem;color:var(--c-text-muted);">
                                             Appeared in <?= (int)$item['usage_count'] ?> out of <?= (int)$item['total_requests'] ?> request<?= ((int)$item['total_requests'] === 1 ? '' : 's') ?>.
                                         </td>
