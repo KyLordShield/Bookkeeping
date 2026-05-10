@@ -3,6 +3,9 @@ from flask_cors import CORS
 from groq import Groq
 from dotenv import load_dotenv
 import os
+import threading
+import requests
+import time
 
 load_dotenv()
 
@@ -10,6 +13,8 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+RENDER_URL = os.getenv("RENDER_URL", "")
 
 SYSTEM_PROMPT = """You are the Approvative Assistant — the AI support chatbot for Approvative Business Documents Processing and Consultancy, embedded in ConsultWise, their web-based service request and document processing system.
 
@@ -91,6 +96,23 @@ RESPONSE STYLE:
 Answer comprehensively and clearly. Use short paragraphs and bullet points only when listing 3 or more items. Keep responses focused on company services, document processing, and system usage. Acknowledge emotion briefly when present, then guide the user back to service support. Always end with an offer to help further."""
 
 
+# ---- Keep alive ping ----
+def keep_alive():
+    time.sleep(60)  # wait 1 min before starting
+    while True:
+        try:
+            if RENDER_URL:
+                requests.get(f"{RENDER_URL}/ping", timeout=10)
+        except:
+            pass
+        time.sleep(14 * 60)  # ping every 14 minutes
+
+@app.route('/ping')
+def ping():
+    return 'ok', 200
+
+
+# ---- Chat route ----
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
@@ -113,3 +135,8 @@ def chat():
     return jsonify({"reply": reply})
 
 
+if __name__ == '__main__':
+    thread = threading.Thread(target=keep_alive)
+    thread.daemon = True
+    thread.start()
+    app.run(port=5000)
