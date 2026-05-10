@@ -399,7 +399,7 @@ $monthlyRequestRows = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 // ↓ ADD THIS RIGHT HERE
 $check = $pdo->query("
-    SELECT request_id, requested_at, preferred_date, created_at, status 
+    SELECT request_id, requested_at, preferred_date, status 
     FROM service_requests 
     ORDER BY request_id DESC 
     LIMIT 5
