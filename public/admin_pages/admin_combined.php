@@ -397,6 +397,16 @@ $monthlyRequestRows = $pdo->query("
     GROUP BY month_start, sr.service_id
     ORDER BY month_start ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
+// ↓ ADD THIS RIGHT HERE
+$check = $pdo->query("
+    SELECT request_id, requested_at, preferred_date, created_at, status 
+    FROM service_requests 
+    ORDER BY request_id DESC 
+    LIMIT 5
+")->fetchAll(PDO::FETCH_ASSOC);
+echo '<pre>' . print_r($check, true) . '</pre>';
+exit;
+// ↑ STOP HERE
 
 $monthServiceCounts = [];
 $availableYearsMap = [];
