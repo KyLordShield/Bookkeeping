@@ -439,29 +439,52 @@ $demandMining = runPythonDemandForecastMiner([
 $monthlyHistory = is_array($demandMining['history'] ?? null) ? $demandMining['history'] : [];
 $monthlyForecast = is_array($demandMining['forecast'] ?? null) ? $demandMining['forecast'] : [];
 
-$clientServiceRows = [];
-foreach ($clients as $client) {
-    $clientServices = Client::getClientServices($client['client_id']);
-    if (empty($clientServices)) {
-        $clientServiceRows[] = [
-            'client'            => $client,
-            'service'           => null,
-            'client_service_id' => null,
-            'status'            => 'pending',
-            'has_requirements'  => false,
-        ];
-    } else {
-        foreach ($clientServices as $cs) {
-            $clientServiceRows[] = [
-                'client'            => $client,
-                'service'           => $cs,
-                'client_service_id' => $cs['client_service_id'],
-                'status'            => $cs['overall_status'],
-                'has_requirements'  => Client::countRequirements($cs['client_service_id']) > 0,
-            ];
-        }
-    }
+$clientPage = max(1, (int)($_GET['client_page'] ?? 1));
+$clientPerPage = 25;
+$clientRowsStmt = $pdo->query("
+    SELECT
+        c.client_id, c.first_name, c.last_name, c.email, c.phone, c.registration_date,
+        cs.client_service_id, cs.overall_status,
+        s.service_id, s.service_name,
+        COALESCE(req.req_count, 0) AS req_count
+    FROM clients c
+    LEFT JOIN client_services cs ON cs.client_id = c.client_id
+    LEFT JOIN services s ON s.service_id = cs.service_id
+    LEFT JOIN (
+        SELECT client_service_id, COUNT(*) AS req_count
+        FROM client_service_requirements
+        GROUP BY client_service_id
+    ) req ON req.client_service_id = cs.client_service_id
+    ORDER BY c.registration_date DESC, c.client_id DESC, cs.client_service_id DESC
+");
+$clientServiceRowsAllRaw = $clientRowsStmt->fetchAll(PDO::FETCH_ASSOC);
+$clientServiceRowsAll = [];
+foreach ($clientServiceRowsAllRaw as $row) {
+    $client = [
+        'client_id' => (int)$row['client_id'],
+        'first_name' => (string)$row['first_name'],
+        'last_name' => (string)$row['last_name'],
+        'email' => (string)$row['email'],
+        'phone' => (string)($row['phone'] ?? ''),
+        'registration_date' => (string)($row['registration_date'] ?? ''),
+    ];
+    $clientServiceRowsAll[] = [
+        'client' => $client,
+        'service' => ($row['client_service_id'] !== null) ? [
+            'client_service_id' => (int)$row['client_service_id'],
+            'service_id' => (int)($row['service_id'] ?? 0),
+            'service_name' => (string)($row['service_name'] ?? ''),
+        ] : null,
+        'client_service_id' => $row['client_service_id'] !== null ? (int)$row['client_service_id'] : null,
+        'status' => (string)($row['overall_status'] ?? 'pending'),
+        'has_requirements' => ((int)($row['req_count'] ?? 0) > 0),
+    ];
 }
+$clientTotalRows = count($clientServiceRowsAll);
+$clientTotalPages = max(1, (int)ceil($clientTotalRows / $clientPerPage));
+if ($clientPage > $clientTotalPages) $clientPage = $clientTotalPages;
+$clientOffset = ($clientPage - 1) * $clientPerPage;
+$clientServiceRows = array_slice($clientServiceRowsAll, $clientOffset, $clientPerPage);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Load data  — Task Management tab
@@ -469,6 +492,8 @@ foreach ($clients as $client) {
 $statusFilter = $_GET['status'] ?? 'all';
 $search       = trim($_GET['search'] ?? '');
 $activeTab    = $_GET['tab'] ?? 'clients';
+$taskPage     = max(1, (int)($_GET['task_page'] ?? 1));
+$taskPerPage  = 12;
 
 $where  = [];
 $params = [];
@@ -491,6 +516,19 @@ $overdueCount = (int)$pdo->query("
     WHERE cs.deadline < CURDATE() AND cs.overall_status != 'completed'
 ")->fetchColumn();
 
+$taskCountStmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM client_services cs
+    JOIN clients c ON cs.client_id = c.client_id
+    JOIN services s ON cs.service_id = s.service_id
+    $whereClause
+");
+$taskCountStmt->execute($params);
+$taskTotalRows = (int)$taskCountStmt->fetchColumn();
+$taskTotalPages = max(1, (int)ceil($taskTotalRows / $taskPerPage));
+if ($taskPage > $taskTotalPages) $taskPage = $taskTotalPages;
+$taskOffset = ($taskPage - 1) * $taskPerPage;
+
 $taskStmt = $pdo->prepare("
     SELECT cs.client_service_id, cs.overall_status, cs.start_date, cs.deadline,
            c.first_name, c.last_name, c.email, c.phone,
@@ -506,6 +544,7 @@ $taskStmt = $pdo->prepare("
         CASE WHEN cs.deadline < CURDATE() AND cs.overall_status != 'completed' THEN 0 ELSE 1 END,
         CASE cs.overall_status WHEN 'pending' THEN 1 WHEN 'in_progress' THEN 2 WHEN 'completed' THEN 3 WHEN 'on_hold' THEN 4 END,
         cs.deadline ASC, cs.start_date DESC
+    LIMIT $taskPerPage OFFSET $taskOffset
 ");
 $taskStmt->execute($params);
 $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -536,6 +575,39 @@ $approvalStmt = $pdo->prepare("
 $approvalStmt->execute();
 $pendingApprovals     = $approvalStmt->fetchAll(PDO::FETCH_ASSOC);
 $approvalCount        = count($pendingApprovals);
+
+$approvalUploadsByReq = [];
+if (!empty($pendingApprovals)) {
+    $reqIds = array_values(array_unique(array_map(static fn($r) => (int)$r['requirement_id'], $pendingApprovals)));
+    if (!empty($reqIds)) {
+        $ph = implode(',', array_fill(0, count($reqIds), '?'));
+        $docsStmt = $pdo->prepare("
+            SELECT related_to_id AS requirement_id, document_id,
+                   document_name AS original_name, document_url AS file_path,
+                   upload_date AS uploaded_at, file_type
+            FROM documents
+            WHERE related_to_type = 'requirement' AND related_to_id IN ($ph)
+            ORDER BY related_to_id, upload_date DESC
+        ");
+        $docsStmt->execute($reqIds);
+        foreach ($docsStmt->fetchAll(PDO::FETCH_ASSOC) as $doc) {
+            $rid = (int)$doc['requirement_id'];
+            if (!isset($approvalUploadsByReq[$rid])) $approvalUploadsByReq[$rid] = [];
+            $approvalUploadsByReq[$rid][] = $doc;
+        }
+    }
+}
+
+function buildAdminCombinedUrl(array $overrides = []): string
+{
+    $query = $_GET;
+    foreach ($overrides as $k => $v) {
+        if ($v === null) unset($query[$k]);
+        else $query[$k] = (string)$v;
+    }
+    $qs = http_build_query($query);
+    return '?' . $qs;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1470,6 +1542,20 @@ $approvalCount        = count($pendingApprovals);
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php if ($clientTotalPages > 1): ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:.8rem;color:var(--c-text-muted);">
+                        <div>Showing <?= (int)($clientOffset + 1) ?>-<?= (int)($clientOffset + count($clientServiceRows)) ?> of <?= (int)$clientTotalRows ?> client rows</div>
+                        <div style="display:flex;gap:6px;">
+                            <?php if ($clientPage > 1): ?>
+                                <a class="btn btn-secondary btn-sm" href="<?= htmlspecialchars(buildAdminCombinedUrl(['tab' => 'clients', 'client_page' => $clientPage - 1])) ?>">&larr; Prev</a>
+                            <?php endif; ?>
+                            <span style="align-self:center;">Page <?= (int)$clientPage ?> / <?= (int)$clientTotalPages ?></span>
+                            <?php if ($clientPage < $clientTotalPages): ?>
+                                <a class="btn btn-secondary btn-sm" href="<?= htmlspecialchars(buildAdminCombinedUrl(['tab' => 'clients', 'client_page' => $clientPage + 1])) ?>">Next &rarr;</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
 
@@ -1552,6 +1638,20 @@ $approvalCount        = count($pendingApprovals);
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
+                <?php if ($taskTotalPages > 1): ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:.8rem;color:var(--c-text-muted);">
+                        <div>Showing <?= (int)($taskOffset + 1) ?>-<?= (int)($taskOffset + count($tasks)) ?> of <?= (int)$taskTotalRows ?> tasks</div>
+                        <div style="display:flex;gap:6px;">
+                            <?php if ($taskPage > 1): ?>
+                                <a class="btn btn-secondary btn-sm" href="<?= htmlspecialchars(buildAdminCombinedUrl(['tab' => 'tasks', 'task_page' => $taskPage - 1])) ?>">&larr; Prev</a>
+                            <?php endif; ?>
+                            <span style="align-self:center;">Page <?= (int)$taskPage ?> / <?= (int)$taskTotalPages ?></span>
+                            <?php if ($taskPage < $taskTotalPages): ?>
+                                <a class="btn btn-secondary btn-sm" href="<?= htmlspecialchars(buildAdminCombinedUrl(['tab' => 'tasks', 'task_page' => $taskPage + 1])) ?>">Next &rarr;</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
 
@@ -1570,14 +1670,7 @@ $approvalCount        = count($pendingApprovals);
             <?php else: ?>
                 <?php foreach ($pendingApprovals as $req):
                     $req_id = $req['requirement_id'];
-                    $uploadStmt = $pdo->prepare("
-                        SELECT document_id, document_name AS original_name, document_url AS file_path, upload_date AS uploaded_at, file_type
-                        FROM documents
-                        WHERE related_to_type = 'requirement' AND related_to_id = ?
-                        ORDER BY upload_date DESC
-                    ");
-                    $uploadStmt->execute([$req_id]);
-                    $uploads = $uploadStmt->fetchAll(PDO::FETCH_ASSOC);
+                    $uploads = $approvalUploadsByReq[(int)$req_id] ?? [];
                 ?>
                 <div class="approval-card" data-req-id="<?= $req_id ?>" data-staff-id="<?= $req['staff_id'] ?>" data-cs-id="<?= $req['client_service_id'] ?>">
                     <div class="approval-card-header">
