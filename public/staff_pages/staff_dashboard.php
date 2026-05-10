@@ -569,7 +569,7 @@ try {
                 html += `
                     <div class="requirement-block" data-req-id="${req.requirement_id}">
                         <div class="requirement-header">
-                            <h3>🎯 ${escapeHtml(req.requirement_name)}</h3>
+                            <h3> ${escapeHtml(req.requirement_name)}</h3>
                             <span class="status-badge status-${statusClass}">
                                 ${escapeHtml((req.status || 'approval_pending').replace(/_/g, ' ').toUpperCase())}
                             </span>

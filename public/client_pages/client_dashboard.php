@@ -57,11 +57,14 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
         .header h1 {
             font-size: 2.3rem;
             margin-bottom: 0.5rem;
-            color: #f6f7f8ff;
+            color: #f8fafc;
+            font-weight: 600;
+            letter-spacing: -0.02em;
         }
         .header p {
-            color: #bbc3ceff;
-            font-size: 1.1rem;
+            color: #cbd5e1;
+            font-size: 1.05rem;
+            font-weight: 400;
         }
 
         .stats-grid {
@@ -71,38 +74,29 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             margin-bottom: 3rem;
         }
         .stat-card {
-            background: white;
-            border-radius: 12px;
+            background: #ffffff;
+            border-radius: 8px;
             padding: 1.8rem 1.5rem;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-            border-left: 4px solid #e2e8f0;
-            transition: all 0.3s ease;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+            transition: box-shadow 0.2s ease;
         }
         .stat-card:hover {
-            box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-            transform: translateY(-2px);
-        }
-        .stat-card.primary {
-            border-left-color: #3b82f6;
-        }
-        .stat-card.warning {
-            border-left-color: #f59e0b;
-        }
-        .stat-card.success {
-            border-left-color: #10b981;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
         }
         .stat-value {
             font-size: 2.5rem;
-            font-weight: 700;
-            color: #1e293b;
+            font-weight: 600;
+            color: #0f172a;
             margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
         }
         .stat-label {
-            font-size: 0.95rem;
-            font-weight: 500;
+            font-size: 0.8125rem;
+            font-weight: 600;
             color: #64748b;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.06em;
         }
 
         .content-grid {
@@ -111,16 +105,20 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             gap: 2.2rem;
         }
         .card {
-            background: white;
-            border-radius: 12px;
+            background: #ffffff;
+            border-radius: 8px;
             padding: 1.6rem;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
         }
         .card-title {
-            font-size: 1.5rem;
+            font-size: 1.25rem;
             font-weight: 600;
             margin-bottom: 1.6rem;
-            color: #1e293b;
+            color: #0f172a;
+            letter-spacing: -0.01em;
+            padding-bottom: 0.85rem;
+            border-bottom: 1px solid #e2e8f0;
         }
 
         .service-item {
@@ -142,16 +140,19 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             margin: 0.8rem 0;
         }
         .status-in_progress {
-            background: #fef3c7;
-            color: #d97706;
-            padding: 6px 12px;
-            border-radius: 14px;
+            background: #f8fafc;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            padding: 5px 11px;
+            border-radius: 4px;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.8125rem;
+            letter-spacing: 0.02em;
         }
         .next-step {
-            color: #831212ff;
+            color: #475569;
             font-weight: 500;
+            font-size: 0.95rem;
         }
 
         .request-item {
@@ -169,12 +170,16 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             font-size: 0.95rem;
         }
         .request-badge {
-            background: #10b981;
-            color: white;
-            font-size: 0.8rem;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            font-size: 0.75rem;
+            font-weight: 600;
             padding: 3px 9px;
-            border-radius: 12px;
+            border-radius: 4px;
             margin-left: 0.7rem;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
         }
 
         @media (max-width: 968px) {
@@ -198,15 +203,15 @@ $upcomingRequests = Client::getUpcomingApprovedRequests($clientId, 8);
             </div>
 
             <div class="stats-grid">
-                <div class="stat-card primary">
+                <div class="stat-card">
                     <div class="stat-value"><?= $totalServices ?></div>
                     <div class="stat-label">Total Services Availed</div>
                 </div>
-                <div class="stat-card warning">
+                <div class="stat-card">
                     <div class="stat-value"><?= $inProgress ?></div>
                     <div class="stat-label">In Progress</div>
                 </div>
-                <div class="stat-card success">
+                <div class="stat-card">
                     <div class="stat-value"><?= $completed ?></div>
                     <div class="stat-label">Completed</div>
                 </div>

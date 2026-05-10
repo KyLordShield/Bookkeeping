@@ -45,12 +45,12 @@ $clientName = $client
             <!-- Header -->
             <div class="chat-header-card">
                 <div class="chat-header-avatar">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg class="chat-header-avatar-svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                         stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                        <circle cx="9"  cy="10" r="1" fill="currentColor" stroke="none"/>
-                        <circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/>
-                        <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>
+                        <circle cx="9"  cy="10" r="1" fill="#ffffff" stroke="none"/>
+                        <circle cx="12" cy="10" r="1" fill="#ffffff" stroke="none"/>
+                        <circle cx="15" cy="10" r="1" fill="#ffffff" stroke="none"/>
                     </svg>
                 </div>
                 <div class="chat-header-info">
@@ -111,7 +111,7 @@ $clientName = $client
                     oninput="chatAutoResize(this)"
                 ></textarea>
                 <button class="chat-send-btn" id="chatSendBtn" onclick="chatSend()">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"/>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"/>
