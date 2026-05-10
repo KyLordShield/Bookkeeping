@@ -13,6 +13,10 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['client_id'])) {
 require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
 
+
+$chatApiUrl = getenv('CHAT_API_URL') ?: 'http://localhost:5000';
+
+
 $clientId   = (int)$_SESSION['client_id'];
 $client     = Client::findById($clientId);
 $clientName = $client
@@ -231,7 +235,7 @@ async function chatSend(prefill = null) {
     setLoading(true);
 
     try {
-        const res = await fetch('../ajax/chatbot_proxy.php', {
+        const res = await fetch('<?= $chatApiUrl ?>/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: chatHistory })
