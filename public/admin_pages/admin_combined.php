@@ -429,41 +429,7 @@ $demandMining = runPythonDemandForecastMiner([
     'forecast_horizon' => 3,
 ]);
 
-// ↓ TEMP DEBUG — REMOVE AFTER
-echo '<pre>';
-echo 'monthServiceCounts: ' . "\n"; print_r($monthServiceCounts);
-echo 'demandMining result: ' . "\n"; print_r($demandMining);
-$testOutput = []; $testExit = 0;
-exec('python3 --version 2>&1', $testOutput, $testExit);
-echo 'Python3: ' . implode(' ', $testOutput) . ' (exit: ' . $testExit . ')' . "\n";
-$scriptPath = realpath(__DIR__ . '/../../scripts/monthly_demand_miner.py');
-echo 'Script path: ' . ($scriptPath ?: 'NOT FOUND') . "\n";
-echo 'Script exists: ' . (is_file($scriptPath ?: '') ? 'YES' : 'NO') . "\n";
-echo 'exec() available: ' . (function_exists('exec') ? 'YES' : 'NO') . "\n";
-echo '</pre>';
-exit;
-// ↑ TEMP DEBUG END
 
-// ↓ ADD THIS NEW PART HERE
-$tempInput = tempnam(sys_get_temp_dir(), 'debug_');
-file_put_contents($tempInput, json_encode([
-    'month_service_counts' => $monthServiceCounts,
-    'service_names'        => array_map('strval', $serviceNames),
-    'current_month'        => date('Y-m-01'),
-    'anchor_year'          => $insightYear,
-    'forecast_horizon'     => 3,
-]));
-$rawOutput = []; $exitCode = 0;
-exec('python3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput) . ' 2>&1', $rawOutput, $exitCode);
-echo 'Exit code: ' . $exitCode . "\n";
-echo 'Raw Python output: ' . "\n";
-print_r($rawOutput);
-@unlink($tempInput);
-// ↑ END NEW PART
-
-echo '</pre>';
-exit;
-// ↑ TEMP DEBUG END
 $monthlyHistory = is_array($demandMining['history'] ?? null) ? $demandMining['history'] : [];
 $monthlyForecast = is_array($demandMining['forecast'] ?? null) ? $demandMining['forecast'] : [];
 
