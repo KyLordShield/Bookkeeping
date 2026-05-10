@@ -187,7 +187,10 @@ function runPythonRequirementMiner(array $payload): ?array
     }
 
     $commands = [
+        // Linux/Render commonly exposes python as python3.
+        'python3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
         'python ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
+        // Windows launcher fallback for local development.
         'py -3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
     ];
 
@@ -221,7 +224,10 @@ function runPythonDemandForecastMiner(array $payload): ?array
     }
 
     $commands = [
+        // Linux/Render commonly exposes python as python3.
+        'python3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
         'python ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
+        // Windows launcher fallback for local development.
         'py -3 ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($tempInput),
     ];
 

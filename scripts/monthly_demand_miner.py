@@ -1,200 +1,197 @@
 #!/usr/bin/env python3
-"""
-monthly_demand_miner.py  -  stdlib-only demand forecaster
-Zero third-party dependencies. Uses weighted moving average + seasonal indexing.
-"""
 import json
 import sys
-from datetime import date
-from collections import defaultdict
-
-MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun',
-               'Jul','Aug','Sep','Oct','Nov','Dec']
+from datetime import datetime
 
 
-def parse_month(s):
-    """Return (year, month) from 'YYYY-MM-01' or 'YYYY-MM'."""
-    s = str(s).strip()[:7]
-    parts = s.split('-')
-    return int(parts[0]), int(parts[1])
+def parse_month(month_key):
+    return datetime.strptime(month_key, "%Y-%m-%d")
 
 
-def month_label(year, month):
-    return f"{MONTH_NAMES[month - 1]} {year}"
+def month_key(dt):
+    return dt.strftime("%Y-%m-01")
 
 
-def weighted_moving_average(values):
-    """Linearly weighted moving average — recent values count more."""
-    n = len(values)
-    if n == 0:
+def add_months(dt, count):
+    month = dt.month - 1 + count
+    year = dt.year + month // 12
+    month = month % 12 + 1
+    return datetime(year, month, 1)
+
+
+def classify(predicted, baseline):
+    if baseline <= 0:
+        if predicted > 0:
+            return "busy"
+        return "steady"
+    if predicted >= baseline * 1.2:
+        return "busy"
+    if predicted <= baseline * 0.8:
+        return "light"
+    return "steady"
+
+
+def advisory(level, month_label, top_services):
+    svc_text = ", ".join(top_services[:3]) if top_services else "core services"
+    if level == "busy":
+        return f"Forecast for {month_label} indicates a high-demand period. Proactive staffing and schedule capacity planning are recommended, with priority attention to {svc_text}."
+    if level == "light":
+        return f"Forecast for {month_label} indicates a lower-demand period. This window may be utilized for process optimization, documentation quality review, and backlog stabilization while monitoring {svc_text}."
+    return f"Forecast for {month_label} indicates demand within normal operating range. Maintain standard service capacity, with routine monitoring of {svc_text}."
+
+
+def get_top_services(service_counts, service_names, top_n=3):
+    ranked = sorted(service_counts.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))
+    out = []
+    for sid, count in ranked[:top_n]:
+        name = service_names.get(str(sid), f"Service {sid}")
+        out.append({"service_id": str(sid), "service_name": name, "count": int(count)})
+    return out
+
+
+def average(values):
+    return (sum(values) / len(values)) if values else 0.0
+
+
+def weighted_average(values, weights):
+    if not values:
         return 0.0
-    weights = list(range(1, n + 1))
+    if not weights or len(values) != len(weights):
+        return average(values)
     total_w = sum(weights)
+    if total_w <= 0:
+        return average(values)
     return sum(v * w for v, w in zip(values, weights)) / total_w
 
 
-def mean(values):
-    return sum(values) / len(values) if values else 0.0
+def collect_same_month_history(target_month, totals_by_month, years_back=3):
+    # Returns oldest->newest list: [(year, total), ...]
+    out = []
+    for y in range(target_month.year - years_back, target_month.year):
+        k = month_key(datetime(y, target_month.month, 1))
+        if k in totals_by_month:
+            out.append((y, int(totals_by_month[k])))
+    return out
 
 
-def stdev(values):
-    if len(values) < 2:
-        return 0.0
-    m = mean(values)
-    variance = sum((x - m) ** 2 for x in values) / (len(values) - 1)
-    return variance ** 0.5
+def predict_total(target_month, totals_by_month):
+    same_month_vals = collect_same_month_history(target_month, totals_by_month, years_back=3)
+    if same_month_vals:
+        only_vals = [v for _, v in same_month_vals]
+        if len(only_vals) >= 3:
+            # Oldest -> newest weights: 20%, 30%, 50%
+            pred = weighted_average(only_vals[-3:], [0.2, 0.3, 0.5])
+            return int(round(pred)), "historical_same_month_3y"
+        if len(only_vals) == 2:
+            # Oldest -> newest weights: 40%, 60%
+            pred = weighted_average(only_vals, [0.4, 0.6])
+            return int(round(pred)), "historical_same_month_2y"
+        return int(round(only_vals[0])), "historical_same_month_1y"
+    recent_vals = list(totals_by_month.values())[-6:]
+    return int(round(average(recent_vals))), "fallback_recent_average"
 
 
-def seasonal_index(monthly_totals, month):
-    """Ratio of this month's historical average to the global monthly average."""
-    all_vals = list(monthly_totals.values())
-    overall  = mean(all_vals)
-    if overall == 0:
-        return 1.0
-    same_month = [v for (y, m), v in monthly_totals.items() if m == month]
-    if not same_month:
-        return 1.0
-    return mean(same_month) / overall
-
-
-def top_services_for_month(month_service_counts, year, month, service_names, top_n=3):
-    key    = f"{year:04d}-{month:02d}-01"
-    counts = month_service_counts.get(key, {})
-    ranked = sorted(counts.items(), key=lambda x: -int(x[1]))[:top_n]
+def predict_service_mix(target_month, month_service_counts, historical_months, service_names):
+    source_counts = {}
+    same_month_found = False
+    for y in range(target_month.year - 3, target_month.year):
+        prev_key = month_key(datetime(y, target_month.month, 1))
+        month_counts = month_service_counts.get(prev_key, {})
+        if not month_counts:
+            continue
+        same_month_found = True
+        for sid, cnt in month_counts.items():
+            sid_str = str(sid)
+            source_counts[sid_str] = source_counts.get(sid_str, 0) + int(cnt)
+    if not same_month_found:
+        source_counts = {}
+        for month in historical_months[-6:]:
+            for sid, cnt in month_service_counts.get(month, {}).items():
+                sid_str = str(sid)
+                source_counts[sid_str] = source_counts.get(sid_str, 0) + int(cnt)
+    ranked = sorted(source_counts.items(), key=lambda kv: (-int(kv[1]), kv[0]))[:3]
     return [service_names.get(str(sid), f"Service {sid}") for sid, _ in ranked]
 
 
-def top_services_overall(month_service_counts, service_names, top_n=3):
-    totals = defaultdict(int)
-    for svc_map in month_service_counts.values():
-        for sid, cnt in svc_map.items():
-            totals[str(sid)] += int(cnt)
-    ranked = sorted(totals.items(), key=lambda x: -x[1])[:top_n]
-    return [service_names.get(sid, f"Service {sid}") for sid, _ in ranked]
-
-
-def run(payload):
-    month_service_counts = payload.get('month_service_counts', {})
-    service_names        = payload.get('service_names', {})
-    anchor_year          = int(payload.get('anchor_year', date.today().year))
-    forecast_horizon     = int(payload.get('forecast_horizon', 3))
-
-    cm_raw = str(payload.get('current_month', ''))
-    try:
-        cur_year, cur_month = parse_month(cm_raw)
-    except Exception:
-        today = date.today()
-        cur_year, cur_month = today.year, today.month
-
-    # ── Build (year, month) -> total map ──────────────────────────────────
-    monthly_totals = {}
-    for key, svc_counts in month_service_counts.items():
-        try:
-            y, m = parse_month(key)
-        except Exception:
-            continue
-        monthly_totals[(y, m)] = sum(int(v) for v in svc_counts.values())
-
-    # ── History for anchor_year ───────────────────────────────────────────
-    history = []
-    month_limit = cur_month if anchor_year == cur_year else 12
-    for month in range(1, month_limit + 1):
-        val      = monthly_totals.get((anchor_year, month), 0)
-        top_svcs = top_services_for_month(
-            month_service_counts, anchor_year, month, service_names
-        )
-        history.append({
-            'month':          f"{anchor_year}-{month:02d}-01",
-            'month_label':    month_label(anchor_year, month),
-            'total_requests': val,
-            'top_services':   [{'service_name': s, 'count': 0} for s in top_svcs],
-        })
-
-    # ── Ordered series for WMA ────────────────────────────────────────────
-    sorted_entries = sorted(monthly_totals.items())   # [((y,m), total), ...]
-    series         = [v for (_, _), v in sorted_entries]
-
-    # ── Forecast next N months ────────────────────────────────────────────
-    forecast    = []
-    fc_year     = cur_year
-    fc_month    = cur_month
-    global_mean = mean(series) if series else 0.0
-
-    for _ in range(forecast_horizon):
-        fc_month += 1
-        if fc_month > 12:
-            fc_month = 1
-            fc_year += 1
-
-        window = series[-6:] if len(series) >= 6 else series[:]
-        wma    = weighted_moving_average(window) if window else 0.0
-        s_idx  = seasonal_index(monthly_totals, fc_month)
-        pred   = max(0.0, wma * s_idx)
-        pred_i = int(round(pred))
-
-        # Confidence
-        if len(series) < 3:
-            confidence = 'low'
-        else:
-            sd = stdev(series[-6:]) if len(series) >= 2 else 0
-            m6 = mean(series[-6:]) if series else 0
-            confidence = 'low' if (m6 > 0 and sd / m6 > 0.6) else 'high'
-
-        # Level
-        if global_mean == 0:
-            level = 'steady'
-        elif pred > global_mean * 1.2:
-            level = 'busy'
-        elif pred < global_mean * 0.8:
-            level = 'light'
-        else:
-            level = 'steady'
-
-        # Advisory
-        lbl = month_label(fc_year, fc_month)
-        if level == 'busy':
-            message = (f"{lbl} looks like a busy month. "
-                       f"Consider scheduling additional staff capacity.")
-        elif level == 'light':
-            message = (f"{lbl} is projected to be quieter. "
-                       f"Good time for internal reviews or proactive client outreach.")
-        else:
-            message = (f"{lbl} is expected to see steady demand. "
-                       f"Maintain current resource allocation.")
-
-        conf_note = ("Estimate based on limited data — treat as indicative."
-                     if confidence == 'low'
-                     else f"Based on {len(series)} month(s) of historical data.")
-
-        top_svcs = top_services_for_month(
-            month_service_counts, fc_year, fc_month, service_names
-        )
-        if not top_svcs:
-            top_svcs = top_services_overall(month_service_counts, service_names)
-
-        forecast.append({
-            'month':                  f"{fc_year}-{fc_month:02d}-01",
-            'month_label':            lbl,
-            'predicted_requests':     pred_i,
-            'level':                  level,
-            'confidence_level':       confidence,
-            'confidence_note':        conf_note,
-            'predicted_top_services': top_svcs,
-            'message':                message,
-        })
-
-    return {'history': history, 'forecast': forecast}
-
-
-if __name__ == '__main__':
+def main():
     if len(sys.argv) < 2:
-        print(json.dumps({'error': 'No input file provided'}))
-        sys.exit(1)
-    try:
-        with open(sys.argv[1], 'r', encoding='utf-8') as f:
-            payload = json.load(f)
-        result = run(payload)
-        print(json.dumps(result, ensure_ascii=False))
-    except Exception as e:
-        print(json.dumps({'error': str(e)}))
-        sys.exit(1)
+        print(json.dumps({"error": "missing input file"}))
+        return 1
+
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    month_service_counts = payload.get("month_service_counts", {})
+    service_names = payload.get("service_names", {})
+    current_month = payload.get("current_month")
+    anchor_year = int(payload.get("anchor_year", datetime.now().year))
+    horizon = min(3, max(1, int(payload.get("forecast_horizon", 3))))
+
+    if not isinstance(month_service_counts, dict) or not month_service_counts:
+        print(json.dumps({"history": [], "forecast": []}, ensure_ascii=False))
+        return 0
+
+    month_keys = sorted(month_service_counts.keys())
+    if not current_month:
+        current_month = month_keys[-1]
+
+    historical_months = [m for m in month_keys if m <= current_month]
+    totals_by_month = {
+        m: int(sum(int(v) for v in (month_service_counts.get(m, {}) or {}).values()))
+        for m in historical_months
+    }
+    baseline = average(list(totals_by_month.values())[-6:])
+
+    history_rows = []
+    for m in historical_months:
+        if parse_month(m).year != anchor_year:
+            continue
+        total = totals_by_month[m]
+        top = get_top_services(month_service_counts.get(m, {}) or {}, service_names, top_n=3)
+        history_rows.append(
+            {
+                "month": m,
+                "month_label": parse_month(m).strftime("%b %Y"),
+                "total_requests": total,
+                "top_services": top,
+            }
+        )
+
+    anchor_months = [m for m in historical_months if parse_month(m).year == anchor_year and m <= current_month]
+    last_month_dt = parse_month(anchor_months[-1]) if anchor_months else parse_month(historical_months[-1])
+    forecast_rows = []
+    for i in range(1, horizon + 1):
+        target = add_months(last_month_dt, i)
+        pred_total_raw, basis = predict_total(target, totals_by_month)
+        pred_total = max(0, pred_total_raw)
+        level = classify(pred_total, baseline)
+        predicted_top = predict_service_mix(target, month_service_counts, historical_months, service_names)
+        if basis in {"historical_same_month_3y", "historical_same_month_2y"}:
+            confidence_level = "high"
+            confidence_note = "Forecast confidence is high because same-month multi-year history is available."
+        elif basis == "historical_same_month_1y":
+            confidence_level = "low"
+            confidence_note = "Forecast confidence is low because only one same-month historical year is available."
+        else:
+            confidence_level = "low"
+            confidence_note = "Forecast confidence is low because same-month historical years are unavailable; a recent-average fallback was used."
+        forecast_rows.append(
+            {
+                "month": month_key(target),
+                "month_label": target.strftime("%b %Y"),
+                "predicted_requests": pred_total,
+                "level": level,
+                "prediction_basis": basis,
+                "confidence_level": confidence_level,
+                "confidence_note": confidence_note,
+                "predicted_top_services": predicted_top,
+                "message": advisory(level, target.strftime("%B %Y"), predicted_top),
+            }
+        )
+
+    print(json.dumps({"history": history_rows, "forecast": forecast_rows}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
