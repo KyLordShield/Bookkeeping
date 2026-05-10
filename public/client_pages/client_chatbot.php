@@ -14,7 +14,17 @@ require_once __DIR__ . '/../../config/Database.php';
 require_once __DIR__ . '/../../classes/Client.php';
 
 
-$chatApiUrl = getenv('CHAT_API_URL') ?: 'http://localhost:5000';
+/**
+ * Chat backend:
+ * - If CHAT_API_URL is set (e.g. https://your-api.onrender.com), the page POSTs to {CHAT_API_URL}/chat (Flask).
+ * - Otherwise uses the PHP proxy (public/ajax/chatbot_proxy.php) — needs GROQ_API_KEY in project .env; no separate Python server.
+ */
+$chatApiUrl = getenv('CHAT_API_URL');
+if (is_string($chatApiUrl) && $chatApiUrl !== '') {
+    $chatEndpoint = rtrim($chatApiUrl, '/') . '/chat';
+} else {
+    $chatEndpoint = '../ajax/chatbot_proxy.php';
+}
 
 
 $clientId   = (int)$_SESSION['client_id'];
@@ -235,7 +245,7 @@ async function chatSend(prefill = null) {
     setLoading(true);
 
     try {
-        const res = await fetch('<?= $chatApiUrl ?>/chat', {
+        const res = await fetch('<?= htmlspecialchars($chatEndpoint, ENT_QUOTES, 'UTF-8') ?>', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: chatHistory })

@@ -582,6 +582,7 @@ window.onclick = function(e) {
     }
 }
 </script>
+ <?php include __DIR__ . '/../partials/chatbot_fab.php'; ?>
 <script src="../partials/client-profile-modal.js"></script>
 </body>
 </html>

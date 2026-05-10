@@ -415,5 +415,6 @@ function getServiceImage($serviceName) {
         }
     </script>
     <script src="../partials/client-profile-modal.js"></script>
+     <?php include __DIR__ . '/../partials/chatbot_fab.php'; ?>
 </body>
 </html>
