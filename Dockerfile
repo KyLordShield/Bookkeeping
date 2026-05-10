@@ -3,7 +3,7 @@ FROM php:8.2-apache
 # Enable Apache modules
 RUN a2enmod rewrite headers
 
-# Install system dependencies
+# Install system dependencies + Python
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -11,12 +11,22 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libcurl4-openssl-dev \
+    python3 \
+    python3-pip \
+    python3-venv \
     && docker-php-ext-install \
     pdo \
     pdo_mysql \
     zip \
     mbstring \
     curl
+
+# Install Python data mining libraries
+RUN pip3 install --break-system-packages \
+    pandas \
+    numpy \
+    scikit-learn \
+    mlxtend
 
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -38,5 +48,8 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # Fix permissions
 RUN chown -R www-data:www-data /var/www/html
+
+# Make Python scripts executable
+RUN find /var/www/html/scripts -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
 
 EXPOSE 80
