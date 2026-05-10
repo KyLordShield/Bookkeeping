@@ -53,19 +53,57 @@ def average(values):
     return (sum(values) / len(values)) if values else 0.0
 
 
+def weighted_average(values, weights):
+    if not values:
+        return 0.0
+    if not weights or len(values) != len(weights):
+        return average(values)
+    total_w = sum(weights)
+    if total_w <= 0:
+        return average(values)
+    return sum(v * w for v, w in zip(values, weights)) / total_w
+
+
+def collect_same_month_history(target_month, totals_by_month, years_back=3):
+    # Returns oldest->newest list: [(year, total), ...]
+    out = []
+    for y in range(target_month.year - years_back, target_month.year):
+        k = month_key(datetime(y, target_month.month, 1))
+        if k in totals_by_month:
+            out.append((y, int(totals_by_month[k])))
+    return out
+
+
 def predict_total(target_month, totals_by_month):
-    same_month_last_year = datetime(target_month.year - 1, target_month.month, 1)
-    prev_key = month_key(same_month_last_year)
-    if prev_key in totals_by_month:
-        return int(totals_by_month[prev_key]), "historical_same_month"
+    same_month_vals = collect_same_month_history(target_month, totals_by_month, years_back=3)
+    if same_month_vals:
+        only_vals = [v for _, v in same_month_vals]
+        if len(only_vals) >= 3:
+            # Oldest -> newest weights: 20%, 30%, 50%
+            pred = weighted_average(only_vals[-3:], [0.2, 0.3, 0.5])
+            return int(round(pred)), "historical_same_month_3y"
+        if len(only_vals) == 2:
+            # Oldest -> newest weights: 40%, 60%
+            pred = weighted_average(only_vals, [0.4, 0.6])
+            return int(round(pred)), "historical_same_month_2y"
+        return int(round(only_vals[0])), "historical_same_month_1y"
     recent_vals = list(totals_by_month.values())[-6:]
     return int(round(average(recent_vals))), "fallback_recent_average"
 
 
 def predict_service_mix(target_month, month_service_counts, historical_months, service_names):
-    prev_key = month_key(datetime(target_month.year - 1, target_month.month, 1))
-    source_counts = month_service_counts.get(prev_key, {})
-    if not source_counts:
+    source_counts = {}
+    same_month_found = False
+    for y in range(target_month.year - 3, target_month.year):
+        prev_key = month_key(datetime(y, target_month.month, 1))
+        month_counts = month_service_counts.get(prev_key, {})
+        if not month_counts:
+            continue
+        same_month_found = True
+        for sid, cnt in month_counts.items():
+            sid_str = str(sid)
+            source_counts[sid_str] = source_counts.get(sid_str, 0) + int(cnt)
+    if not same_month_found:
         source_counts = {}
         for month in historical_months[-6:]:
             for sid, cnt in month_service_counts.get(month, {}).items():
@@ -128,12 +166,15 @@ def main():
         pred_total = max(0, pred_total_raw)
         level = classify(pred_total, baseline)
         predicted_top = predict_service_mix(target, month_service_counts, historical_months, service_names)
-        confidence_level = "high" if basis == "historical_same_month" else "low"
-        confidence_note = (
-            "Forecast confidence is high because same-month prior-year history is available."
-            if confidence_level == "high"
-            else "Forecast confidence is low because same-month prior-year history is unavailable; a recent-average fallback was used."
-        )
+        if basis in {"historical_same_month_3y", "historical_same_month_2y"}:
+            confidence_level = "high"
+            confidence_note = "Forecast confidence is high because same-month multi-year history is available."
+        elif basis == "historical_same_month_1y":
+            confidence_level = "low"
+            confidence_note = "Forecast confidence is low because only one same-month historical year is available."
+        else:
+            confidence_level = "low"
+            confidence_note = "Forecast confidence is low because same-month historical years are unavailable; a recent-average fallback was used."
         forecast_rows.append(
             {
                 "month": month_key(target),
